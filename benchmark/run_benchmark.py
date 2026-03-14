@@ -2,8 +2,16 @@
 """
 Benchmark runner for evaluating LLMs on Dafny verification tasks.
 
-Usage:
+Usage (original, still works):
     python run_benchmark.py --dataset ./dataset/problems --llm claude-code --timeout 600 --max-iterations 20
+
+New adapter/parallel flags:
+    python run_benchmark.py --dataset ./dataset/problems \\
+        --adapter openai_compatible --base-url http://localhost:8000/v1 \\
+        --model meta-llama/Llama-3.1-70B-Instruct --parallel 4
+
+Config-file driven:
+    python run_benchmark.py --config config.yaml
 
 The runner:
   1. Reads all problems from the dataset directory
@@ -36,25 +44,90 @@ DEFAULT_REAL_DAFNY = "/opt/homebrew/Cellar/dotnet@8/8.0.124/libexec/dotnet /User
 PROXY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dafny-proxy")
 
 
-def get_adapter(llm_name: str, model: str = "") -> BaseAdapter:
-    """Factory function to create an adapter by name."""
-    adapters = {
-        "claude-code": lambda: ClaudeCodeAdapter(model=model),
-        "manual": lambda: ManualAdapter(),
-    }
-    if llm_name not in adapters:
+# ── Adapter name aliases ─────────────────────────────────────────────
+# Supports both dashed (legacy) and underscored (new) forms.
+_ADAPTER_ALIASES = {
+    "claude-code": "claude_code",
+    "claude_code": "claude_code",
+    "manual": "manual",
+    "openai_compatible": "openai_compatible",
+    "openai-compatible": "openai_compatible",
+    "hf_transformers": "hf_transformers",
+    "hf-transformers": "hf_transformers",
+}
+
+
+def get_adapter(
+    llm_name: str,
+    *,
+    model: str = "",
+    base_url: Optional[str] = None,
+    api_key: Optional[str] = None,
+    model_path: Optional[str] = None,
+    device: str = "auto",
+) -> BaseAdapter:
+    """
+    Factory function to create an adapter by name.
+
+    Parameters
+    ----------
+    llm_name : str
+        Adapter identifier (see ``_ADAPTER_ALIASES``).
+    model : str
+        Model identifier (meaning is adapter-specific).
+    base_url : str, optional
+        API base URL (openai_compatible adapter).
+    api_key : str, optional
+        API key (openai_compatible adapter).
+    model_path : str, optional
+        Local model path (hf_transformers adapter).
+    device : str
+        Device string (hf_transformers adapter).
+    """
+    canonical = _ADAPTER_ALIASES.get(llm_name)
+    if canonical is None:
         raise ValueError(
-            f"Unknown LLM adapter: {llm_name}. Available: {list(adapters.keys())}"
+            f"Unknown LLM adapter: {llm_name}. "
+            f"Available: {sorted(set(_ADAPTER_ALIASES.values()))}"
         )
-    return adapters[llm_name]()
+
+    if canonical == "claude_code":
+        return ClaudeCodeAdapter(model=model)
+
+    if canonical == "manual":
+        return ManualAdapter()
+
+    if canonical == "openai_compatible":
+        from adapters.openai_compatible import OpenAICompatibleAdapter
+
+        kwargs = {"model_name": model}
+        if base_url:
+            kwargs["base_url"] = base_url
+        if api_key:
+            kwargs["api_key"] = api_key
+        return OpenAICompatibleAdapter(**kwargs)
+
+    if canonical == "hf_transformers":
+        from adapters.hf_transformers import HFTransformersAdapter
+
+        kwargs = {}
+        if model_path:
+            kwargs["model_path"] = model_path
+        elif model:
+            kwargs["model_path"] = model
+        if device:
+            kwargs["device"] = device
+        return HFTransformersAdapter(**kwargs)
+
+    raise ValueError(f"Unhandled adapter: {canonical}")
 
 
 def discover_problems(dataset_dir: str) -> List[dict]:
     """
     Discover all problems in the dataset directory.
 
-    Each problem is a subdirectory containing at least `task.dfy`.
-    Optionally contains `description.txt` and `solution.dfy`.
+    Each problem is a subdirectory containing at least ``task.dfy``.
+    Optionally contains ``description.txt`` and ``solution.dfy``.
     """
     problems = []
     dataset_path = Path(dataset_dir)
@@ -209,25 +282,71 @@ def generate_markdown_summary(results: List[dict], adapter_name: str) -> str:
     return "\n".join(lines)
 
 
+# ── Config-file support ──────────────────────────────────────────────
+
+
+def _load_config(path: str) -> dict:
+    """Load a YAML config file, falling back to JSON."""
+    try:
+        import yaml  # type: ignore[import-untyped]
+
+        with open(path, "r") as f:
+            return yaml.safe_load(f)
+    except ImportError:
+        with open(path, "r") as f:
+            return json.load(f)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Run Dafny verification benchmark on LLMs"
     )
     parser.add_argument(
-        "--dataset",
-        required=True,
-        help="Path to dataset directory containing problem subdirectories",
+        "--config",
+        default=None,
+        help="Path to YAML/JSON config file (overrides other flags)",
     )
     parser.add_argument(
+        "--dataset",
+        default=None,
+        help="Path to dataset directory containing problem subdirectories",
+    )
+    # Legacy flag (kept for backward compatibility).
+    parser.add_argument(
         "--llm",
-        required=True,
-        choices=["claude-code", "manual"],
-        help="LLM adapter to use",
+        default=None,
+        help="LLM adapter to use (legacy; prefer --adapter)",
+    )
+    parser.add_argument(
+        "--adapter",
+        default=None,
+        choices=["claude_code", "manual", "openai_compatible", "hf_transformers"],
+        help="Adapter name",
     )
     parser.add_argument(
         "--model",
         default="",
         help="Model identifier to pass to the LLM (adapter-specific)",
+    )
+    parser.add_argument(
+        "--base-url",
+        default=None,
+        help="API base URL for openai_compatible adapter",
+    )
+    parser.add_argument(
+        "--api-key",
+        default=None,
+        help="API key for openai_compatible adapter",
+    )
+    parser.add_argument(
+        "--model-path",
+        default=None,
+        help="Local model path for hf_transformers adapter",
+    )
+    parser.add_argument(
+        "--device",
+        default="auto",
+        help="Device for hf_transformers adapter (default: auto)",
     )
     parser.add_argument(
         "--timeout",
@@ -257,43 +376,136 @@ def main():
         default=None,
         help="Specific problem names to run (default: all)",
     )
+    parser.add_argument(
+        "--parallel",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Run problems in parallel with N workers (uses parallel_runner)",
+    )
 
     args = parser.parse_args()
 
-    # Create output directory
-    if args.output_dir:
-        output_dir = args.output_dir
+    # ── Merge config if provided ─────────────────────────────────────
+    cfg: dict = {}
+    if args.config:
+        cfg = _load_config(args.config)
+
+    # Resolve values: CLI > config > defaults.
+    dataset = args.dataset or cfg.get("problems_dir") or cfg.get("dataset")
+    adapter_name = args.adapter or args.llm or cfg.get("adapter")
+    model = args.model or cfg.get("model", "")
+    base_url = args.base_url or cfg.get("base_url")
+    api_key = args.api_key or cfg.get("api_key")
+    model_path = args.model_path or cfg.get("model_path")
+    device = args.device if args.device != "auto" else cfg.get("device", "auto")
+    timeout_val = args.timeout if args.timeout != 600 else cfg.get("timeout", 600)
+    max_iters = (
+        args.max_iterations
+        if args.max_iterations != 20
+        else cfg.get("max_iterations", 20)
+    )
+    real_dafny = (
+        args.real_dafny
+        if args.real_dafny != DEFAULT_REAL_DAFNY
+        else cfg.get("dafny_path", DEFAULT_REAL_DAFNY)
+    )
+    output_dir_arg = args.output_dir or cfg.get("output_dir")
+    parallel = args.parallel or cfg.get("parallel_workers")
+    problem_names = args.problems or cfg.get("problems")
+
+    if not dataset:
+        parser.error("--dataset is required (or set problems_dir in config)")
+    if not adapter_name:
+        parser.error("--llm or --adapter is required (or set adapter in config)")
+
+    # ── Create output directory ──────────────────────────────────────
+    if output_dir_arg:
+        output_dir = output_dir_arg
     else:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        display_name = _ADAPTER_ALIASES.get(adapter_name, adapter_name)
         output_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             "results",
-            f"{args.llm}_{timestamp}",
+            f"{display_name}_{timestamp}",
         )
 
     os.makedirs(output_dir, exist_ok=True)
     print(f"Output directory: {output_dir}")
 
-    # Discover problems
-    problems = discover_problems(args.dataset)
+    # ── Discover problems ────────────────────────────────────────────
+    problems = discover_problems(dataset)
     if not problems:
         print("ERROR: No problems found in dataset directory", file=sys.stderr)
         sys.exit(1)
 
-    # Filter problems if specified
-    if args.problems:
-        problems = [p for p in problems if p["name"] in args.problems]
+    if problem_names:
+        problems = [p for p in problems if p["name"] in problem_names]
         if not problems:
             print(
-                f"ERROR: None of the specified problems found: {args.problems}",
+                f"ERROR: None of the specified problems found: {problem_names}",
                 file=sys.stderr,
             )
             sys.exit(1)
 
     print(f"Found {len(problems)} problems: {[p['name'] for p in problems]}")
 
-    # Create adapter
-    adapter = get_adapter(args.llm, model=args.model)
+    # ── Parallel mode ────────────────────────────────────────────────
+    if parallel and parallel > 1:
+        from parallel_runner import run_parallel, save_json, save_csv
+
+        adapter_kwargs = {"model": model}
+        if base_url:
+            adapter_kwargs["base_url"] = base_url
+        if api_key:
+            adapter_kwargs["api_key"] = api_key
+        if model_path:
+            adapter_kwargs["model_path"] = model_path
+        if device:
+            adapter_kwargs["device"] = device
+
+        all_results = run_parallel(
+            problems=problems,
+            adapter_name=adapter_name,
+            adapter_kwargs=adapter_kwargs,
+            timeout=timeout_val,
+            max_iterations=max_iters,
+            real_dafny=real_dafny,
+            output_dir=output_dir,
+            workers=parallel,
+        )
+
+        meta = {
+            "adapter": adapter_name,
+            "model": model,
+            "timeout": timeout_val,
+            "max_iterations": max_iters,
+            "workers": parallel,
+            "timestamp": datetime.now().isoformat(),
+        }
+        save_json(all_results, meta, os.path.join(output_dir, "results.json"))
+        save_csv(all_results, os.path.join(output_dir, "results.csv"))
+
+        summary = generate_markdown_summary(all_results, adapter_name)
+        summary_file = os.path.join(output_dir, "summary.md")
+        with open(summary_file, "w") as f:
+            f.write(summary)
+
+        print("\n" + summary)
+
+        all_passed = all(r["result"]["success"] for r in all_results)
+        sys.exit(0 if all_passed else 1)
+
+    # ── Sequential mode (original behaviour) ─────────────────────────
+    adapter = get_adapter(
+        adapter_name,
+        model=model,
+        base_url=base_url,
+        api_key=api_key,
+        model_path=model_path,
+        device=device,
+    )
     print(f"Using adapter: {adapter.name}")
 
     # Verify proxy exists
@@ -308,9 +520,9 @@ def main():
         result = run_single_problem(
             problem=problem,
             adapter=adapter,
-            timeout=args.timeout,
-            max_iterations=args.max_iterations,
-            real_dafny=args.real_dafny,
+            timeout=timeout_val,
+            max_iterations=max_iters,
+            real_dafny=real_dafny,
             output_dir=output_dir,
         )
         all_results.append(result)
@@ -321,9 +533,9 @@ def main():
         json.dump(
             {
                 "adapter": adapter.name,
-                "model": args.model,
-                "timeout": args.timeout,
-                "max_iterations": args.max_iterations,
+                "model": model,
+                "timeout": timeout_val,
+                "max_iterations": max_iters,
                 "timestamp": datetime.now().isoformat(),
                 "results": all_results,
             },
