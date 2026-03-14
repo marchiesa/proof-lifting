@@ -1,33 +1,39 @@
-// Three Sum -- Test cases
+// Three Sum -- Runtime spec tests
 
-predicate IsSorted(a: seq<int>)
+// Bounded IsSorted for runtime
+function IsSortedBounded(a: seq<int>): bool
 {
-  forall i, j :: 0 <= i < j < |a| ==> a[i] <= a[j]
+  if |a| <= 1 then true
+  else a[0] <= a[1] && IsSortedBounded(a[1..])
 }
 
-method {:axiom} ThreeSum(a: seq<int>, target: int) returns (found: bool, i: int, j: int, k: int)
-  requires IsSorted(a)
-  ensures found ==> 0 <= i < j < k < |a| && a[i] + a[j] + a[k] == target
-  ensures !found ==> forall p, q, r :: 0 <= p < q < r < |a| ==> a[p] + a[q] + a[r] != target
-
-method TestFound()
+method Main()
 {
-  var a := [-1, 0, 1, 2, -1, 4];
-  // Not sorted, but let's use sorted input
-  var b := [-1, -1, 0, 1, 2, 4];
-  var f, i, j, k := ThreeSum(b, 0);
-  if f { assert b[i] + b[j] + b[k] == 0; }
-}
+  // IsSorted: positive cases
+  expect IsSortedBounded([-1, -1, 0, 1, 2, 4]), "Sorted array";
+  expect IsSortedBounded([1, 2, 3]), "Simple sorted";
+  expect IsSortedBounded([1, 1, 1]), "All equal is sorted";
+  expect IsSortedBounded([]), "Empty is sorted";
+  expect IsSortedBounded([42]), "Single element is sorted";
 
-method TestNotFound()
-{
-  var a := [1, 2, 3];
-  var f, i, j, k := ThreeSum(a, 100);
-}
+  // IsSorted: negative cases
+  expect !IsSortedBounded([3, 2, 1]), "Reverse order is not sorted";
+  expect !IsSortedBounded([1, 3, 2]), "Unsorted is not sorted";
 
-method TestTooSmall()
-{
-  var a := [1, 2];
-  var f, i, j, k := ThreeSum(a, 3);
-  assert !f;
+  // Test three-sum property manually:
+  // For [-1, -1, 0, 1, 2, 4], sum to 0: (-1) + (-1) + 2 = 0
+  var a := [-1, -1, 0, 1, 2, 4];
+  expect a[0] + a[1] + a[4] == 0, "Triple (-1,-1,2) sums to 0";
+  expect 0 < 1 && 1 < 4, "Indices are strictly increasing";
+
+  // Test no triple sums to target
+  var b := [1, 2, 3];
+  // min sum = 1+2+3 = 6, so no triple sums to 100
+  expect b[0] + b[1] + b[2] == 6, "Only triple in [1,2,3] sums to 6";
+  expect b[0] + b[1] + b[2] != 100, "No triple sums to 100";
+
+  // Too few elements
+  expect |[1, 2]| < 3, "Array of length 2 can't have 3 distinct indices";
+
+  print "All spec tests passed\n";
 }

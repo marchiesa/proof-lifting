@@ -1,53 +1,34 @@
-// Validate BST Property on Array -- Test cases
+// Validate BST Property on Array -- Runtime spec tests
 
 predicate IsSorted(a: seq<int>)
 {
   forall i, j :: 0 <= i < j < |a| ==> a[i] < a[j]
 }
 
-method {:axiom} ValidateBST(a: seq<int>) returns (valid: bool)
-  ensures valid <==> IsSorted(a)
-
-method TestSorted()
+// Bounded version for runtime checking
+function IsSortedBounded(a: seq<int>): bool
 {
-  var a := [1, 2, 3, 4, 5];
-  var v := ValidateBST(a);
-  assert a[0] < a[1] < a[2] < a[3] < a[4];
-  assert IsSorted(a);
-  assert v;
+  if |a| <= 1 then true
+  else a[0] < a[1] && IsSortedBounded(a[1..])
 }
 
-method TestUnsorted()
+method Main()
 {
-  var a := [1, 3, 2, 4, 5];
-  assert a[1] == 3;
-  assert a[2] == 2;
-  assert !(a[1] < a[2]);
-  assert !IsSorted(a);
-  var v := ValidateBST(a);
-  assert !v;
-}
+  // Positive: sorted arrays satisfy IsSorted
+  expect IsSortedBounded([1, 2, 3, 4, 5]), "Sorted array should satisfy IsSorted";
+  expect IsSortedBounded([]), "Empty array should satisfy IsSorted";
+  expect IsSortedBounded([42]), "Single element should satisfy IsSorted";
+  expect IsSortedBounded([-3, -1, 0, 5, 10]), "Sorted with negatives should satisfy IsSorted";
 
-method TestEmpty()
-{
-  var a: seq<int> := [];
-  var v := ValidateBST(a);
-  assert v;
-}
+  // Negative: unsorted arrays should not satisfy IsSorted
+  expect !IsSortedBounded([1, 3, 2, 4, 5]), "Unsorted array should not satisfy IsSorted";
+  expect !IsSortedBounded([5, 4, 3, 2, 1]), "Reverse sorted should not satisfy IsSorted";
+  expect !IsSortedBounded([1, 1, 2]), "Duplicates should not satisfy strict IsSorted";
+  expect !IsSortedBounded([2, 1]), "Decreasing pair should not satisfy IsSorted";
 
-method TestSingle()
-{
-  var a := [42];
-  var v := ValidateBST(a);
-  assert v;
-}
+  // Edge cases
+  expect IsSortedBounded([1, 2]), "Two element sorted should pass";
+  expect !IsSortedBounded([2, 2]), "Equal pair should not satisfy strict sort";
 
-method TestDuplicates()
-{
-  var a := [1, 1, 2];
-  assert a[0] == 1 && a[1] == 1;
-  assert !(a[0] < a[1]);
-  assert !IsSorted(a);
-  var v := ValidateBST(a);
-  assert !v;
+  print "All spec tests passed\n";
 }

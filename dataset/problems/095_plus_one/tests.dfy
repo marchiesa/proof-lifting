@@ -1,4 +1,4 @@
-// Plus One -- Test cases
+// Plus One -- Runtime spec tests
 
 predicate ValidDigits(digits: seq<int>)
 {
@@ -16,40 +16,27 @@ function PlusOneSpec(digits: seq<int>): seq<int>
     PlusOneSpec(digits[..|digits|-1]) + [0]
 }
 
-method {:axiom} PlusOne(digits: seq<int>) returns (result: seq<int>)
-  requires |digits| > 0
-  requires ValidDigits(digits)
-  ensures result == PlusOneSpec(digits)
-  ensures ValidDigits(result)
-
-method TestNoCarry()
+method Main()
 {
-  var d := [1, 2, 3];
-  var r := PlusOne(d);
-  assert r == PlusOneSpec(d);
-  assert PlusOneSpec(d) == [1, 2, 4];
-  assert r == [1, 2, 4];
-}
+  // PlusOneSpec: no carry
+  expect PlusOneSpec([1, 2, 3]) == [1, 2, 4], "PlusOne of [1,2,3] should be [1,2,4]";
+  expect PlusOneSpec([0]) == [1], "PlusOne of [0] should be [1]";
+  expect PlusOneSpec([1, 0, 0]) == [1, 0, 1], "PlusOne of [1,0,0] should be [1,0,1]";
 
-method TestWithCarry()
-{
-  var d := [1, 2, 9];
-  var r := PlusOne(d);
-  assert PlusOneSpec(d) == PlusOneSpec([1, 2]) + [0];
-  assert PlusOneSpec([1, 2]) == [1, 3];
-  assert r == [1, 3, 0];
-}
+  // PlusOneSpec: with carry
+  expect PlusOneSpec([1, 2, 9]) == [1, 3, 0], "PlusOne of [1,2,9] should be [1,3,0]";
+  expect PlusOneSpec([1, 9, 9]) == [2, 0, 0], "PlusOne of [1,9,9] should be [2,0,0]";
 
-method TestAllNines()
-{
-  var d := [9, 9, 9];
-  var r := PlusOne(d);
-  assert |r| == 4;
-}
+  // PlusOneSpec: all nines
+  expect PlusOneSpec([9, 9, 9]) == [1, 0, 0, 0], "PlusOne of [9,9,9] should be [1,0,0,0]";
+  expect PlusOneSpec([9]) == [1, 0], "PlusOne of [9] should be [1,0]";
 
-method TestSingle()
-{
-  var d := [0];
-  var r := PlusOne(d);
-  assert r == [1];
+  // PlusOneSpec: negative tests
+  expect PlusOneSpec([1, 2, 3]) != [1, 2, 3], "PlusOne should change something";
+  expect PlusOneSpec([9, 9, 9]) != [9, 9, 10], "PlusOne should carry properly";
+
+  // PlusOneSpec: empty
+  expect PlusOneSpec([]) == [1], "PlusOne of [] should be [1]";
+
+  print "All spec tests passed\n";
 }

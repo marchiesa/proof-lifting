@@ -1,4 +1,4 @@
-// Find Minimum in Rotated Sorted Array -- Test cases
+// Find Minimum in Rotated Sorted Array -- Runtime spec tests
 
 function SeqMin(a: seq<int>): int
   requires |a| > 0
@@ -9,35 +9,38 @@ function SeqMin(a: seq<int>): int
   else SeqMin(a[1..])
 }
 
-method {:axiom} FindMin(a: seq<int>) returns (min: int)
-  requires |a| > 0
-  ensures min == SeqMin(a)
-
-method TestNormal()
+method Main()
 {
-  var a := [3, 4, 5, 1, 2];
-  var m := FindMin(a);
-  assert a[3] == 1;
-  // SeqMin finds the minimum which is 1
-}
+  // Positive: SeqMin of single element
+  expect SeqMin([42]) == 42, "SeqMin of [42] should be 42";
 
-method TestSorted()
-{
-  var a := [1, 2, 3, 4, 5];
-  var m := FindMin(a);
-  assert a[0] == 1;
-}
+  // Positive: SeqMin of sorted array
+  expect SeqMin([1, 2, 3, 4, 5]) == 1, "SeqMin of sorted array should be 1";
 
-method TestSingleElement()
-{
-  var a := [42];
-  var m := FindMin(a);
-  assert m == 42;
-}
+  // Positive: SeqMin of rotated sorted array
+  expect SeqMin([3, 4, 5, 1, 2]) == 1, "SeqMin of rotated [3,4,5,1,2] should be 1";
 
-method TestTwoElements()
-{
-  var a := [2, 1];
-  var m := FindMin(a);
-  assert a[1] == 1;
+  // Positive: SeqMin of two elements
+  expect SeqMin([2, 1]) == 1, "SeqMin of [2,1] should be 1";
+
+  // Positive: SeqMin of reverse sorted
+  expect SeqMin([5, 4, 3, 2, 1]) == 1, "SeqMin of [5,4,3,2,1] should be 1";
+
+  // Positive: min is at beginning
+  expect SeqMin([1, 5, 3, 7]) == 1, "SeqMin of [1,5,3,7] should be 1";
+
+  // Positive: min is at end
+  expect SeqMin([5, 3, 7, 1]) == 1, "SeqMin of [5,3,7,1] should be 1";
+
+  // Negative: SeqMin should not equal non-min element
+  expect SeqMin([3, 1, 2]) != 3, "SeqMin of [3,1,2] should not be 3";
+  expect SeqMin([3, 1, 2]) != 2, "SeqMin of [3,1,2] should not be 2";
+
+  // Positive: all same elements
+  expect SeqMin([5, 5, 5]) == 5, "SeqMin of [5,5,5] should be 5";
+
+  // Negative values
+  expect SeqMin([-3, -1, -2]) == -3, "SeqMin of [-3,-1,-2] should be -3";
+
+  print "All spec tests passed\n";
 }

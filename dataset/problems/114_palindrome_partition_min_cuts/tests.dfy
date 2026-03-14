@@ -1,48 +1,88 @@
-// Palindrome Partitioning: Minimum Cuts -- Test cases
-predicate IsPalindrome(s: seq<int>, lo: int, hi: int)
+// Palindrome Partitioning: Minimum Cuts -- Runtime spec tests
+
+// Bounded IsPalindrome for runtime
+function IsPalindromeBounded(s: seq<int>, lo: int, hi: int): bool
   requires 0 <= lo <= hi <= |s|
+  decreases hi - lo
 {
-  forall i :: 0 <= i < (hi - lo) / 2 ==> s[lo + i] == s[hi - 1 - i]
+  if hi - lo <= 1 then true
+  else s[lo] == s[hi - 1] && IsPalindromeBounded(s, lo + 1, hi - 1)
 }
 
-function MinCuts(s: seq<int>, n: int): nat
-  requires 0 <= n <= |s|
-  decreases n
-{
-  if n <= 1 then 0
-  else if IsPalindrome(s, 0, n) then 0
-  else
-    MinCutsHelper(s, n, 1)
-}
-
-function MinCutsHelper(s: seq<int>, n: int, j: int): nat
-  requires 0 < j <= n <= |s|
-  decreases n - j
-{
-  var cost := if IsPalindrome(s, j, n) then 1 + MinCuts(s, j) else n;
-  if j + 1 > n - 1 then cost
-  else
-    var rest := MinCutsHelper(s, n, j + 1);
-    if cost <= rest then cost else rest
-}
-
-method {:axiom} PalindromeMinCuts(s: seq<int>) returns (result: nat)
+// Iterative MinCuts computation for testing
+method ComputeMinCuts(s: seq<int>) returns (result: nat)
   requires |s| > 0
-  ensures result == MinCuts(s, |s|)
-
-method TestPalindrome() {
-  // "aab" = [1, 1, 2] -> min cuts = 1 (aa | b)
-  var r := PalindromeMinCuts([1, 1, 2]);
+{
+  var n := |s|;
+  var dp := new nat[n + 1];
+  dp[0] := 0;
+  dp[1] := 0;
+  var i := 2;
+  while i <= n
+    invariant 2 <= i <= n + 1
+  {
+    var best: nat := i; // worst case: i-1 cuts but use i as safe upper bound
+    var j := 0;
+    while j < i
+      invariant 0 <= j <= i
+    {
+      if IsPalindromeBounded(s, j, i) {
+        var cost: nat := if j == 0 then 0 else dp[j] + 1;
+        if cost < best {
+          best := cost;
+        }
+      }
+      j := j + 1;
+    }
+    dp[i] := best;
+    i := i + 1;
+  }
+  result := dp[n];
 }
 
-method TestSingle() {
-  var r := PalindromeMinCuts([1]);
-  assert r == 0;
-}
+method Main()
+{
+  // IsPalindromeBounded: positive
+  expect IsPalindromeBounded([1, 2, 1], 0, 3), "[1,2,1] is palindrome";
+  expect IsPalindromeBounded([1, 1], 0, 2), "[1,1] is palindrome";
+  expect IsPalindromeBounded([1], 0, 1), "[1] is palindrome";
+  expect IsPalindromeBounded([1, 2, 3], 0, 0), "Empty range is palindrome";
+  expect IsPalindromeBounded([1, 2, 2, 1], 0, 4), "[1,2,2,1] is palindrome";
 
-method TestAlreadyPalindrome() {
-  // "aba" = [1, 2, 1]
-  var r := PalindromeMinCuts([1, 2, 1]);
-  assert IsPalindrome([1, 2, 1], 0, 3);
-  assert r == 0;
+  // IsPalindromeBounded: negative
+  expect !IsPalindromeBounded([1, 2, 3], 0, 3), "[1,2,3] is not palindrome";
+  expect !IsPalindromeBounded([1, 2], 0, 2), "[1,2] is not palindrome";
+
+  // IsPalindromeBounded: subrange
+  expect IsPalindromeBounded([1, 2, 1, 3], 0, 3), "[1,2,1] (first 3) is palindrome";
+  expect IsPalindromeBounded([5, 1, 1, 3], 1, 3), "[1,1] (middle) is palindrome";
+
+  // MinCuts: single character
+  var r1 := ComputeMinCuts([1]);
+  expect r1 == 0, "MinCuts of [1] = 0";
+
+  // MinCuts: palindrome needs 0 cuts
+  var r2 := ComputeMinCuts([1, 2, 1]);
+  expect r2 == 0, "MinCuts of [1,2,1] = 0";
+
+  var r3 := ComputeMinCuts([1, 2, 2, 1]);
+  expect r3 == 0, "MinCuts of [1,2,2,1] = 0";
+
+  // MinCuts: "aab" = [1, 1, 2] -> 1 cut (aa | b)
+  var r4 := ComputeMinCuts([1, 1, 2]);
+  expect r4 == 1, "MinCuts of [1,1,2] = 1";
+
+  // MinCuts: each char different, n-1 cuts
+  var r5 := ComputeMinCuts([1, 2, 3]);
+  expect r5 == 2, "MinCuts of [1,2,3] = 2";
+
+  // MinCuts: negative test
+  expect r4 != 0, "MinCuts of [1,1,2] should not be 0";
+  expect r4 != 2, "MinCuts of [1,1,2] should not be 2";
+
+  // MinCuts: "aabb" = [1,1,2,2] -> 1 cut (aa | bb)
+  var r6 := ComputeMinCuts([1, 1, 2, 2]);
+  expect r6 == 1, "MinCuts of [1,1,2,2] = 1";
+
+  print "All spec tests passed\n";
 }

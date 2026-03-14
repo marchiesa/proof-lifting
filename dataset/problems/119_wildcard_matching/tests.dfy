@@ -1,4 +1,5 @@
-// Wildcard Matching -- Test cases
+// Wildcard Matching -- Runtime spec tests
+
 function WildMatch(s: seq<int>, p: seq<int>, si: int, pi: int): bool
   requires 0 <= si <= |s|
   requires 0 <= pi <= |p|
@@ -14,25 +15,47 @@ function WildMatch(s: seq<int>, p: seq<int>, si: int, pi: int): bool
   else false
 }
 
-method {:axiom} WildcardMatch(s: seq<int>, p: seq<int>) returns (result: bool)
-  requires forall i :: 0 <= i < |s| ==> s[i] > 0
-  ensures result == WildMatch(s, p, 0, 0)
+method Main()
+{
+  // Exact match: positive
+  expect WildMatch([1, 2], [1, 2], 0, 0), "[1,2] matches [1,2]";
+  expect WildMatch([1], [1], 0, 0), "[1] matches [1]";
 
-method TestExact() {
-  var r := WildcardMatch([1, 2], [1, 2]);
-  assert WildMatch([1, 2], [1, 2], 0, 0);
-  assert r;
-}
+  // Exact match: negative
+  expect !WildMatch([1], [2], 0, 0), "[1] does not match [2]";
+  expect !WildMatch([1, 2], [1, 3], 0, 0), "[1,2] does not match [1,3]";
 
-method TestStar() {
-  // s = [1], p = [*] = [-1]
-  var r := WildcardMatch([1], [-1]);
-  assert WildMatch([1], [-1], 0, 0);
-  assert r;
-}
+  // Question mark (0) matches any single char
+  expect WildMatch([1], [0], 0, 0), "[1] matches [?]";
+  expect WildMatch([5], [0], 0, 0), "[5] matches [?]";
+  expect WildMatch([1, 2], [0, 0], 0, 0), "[1,2] matches [?,?]";
+  expect !WildMatch([1, 2], [0], 0, 0), "[1,2] does not match [?] (too long)";
 
-method TestNoMatch() {
-  var r := WildcardMatch([1], [2]);
-  assert !WildMatch([1], [2], 0, 0);
-  assert !r;
+  // Star (-1) matches any sequence (including empty)
+  expect WildMatch([], [-1], 0, 0), "[] matches [*]";
+  expect WildMatch([1], [-1], 0, 0), "[1] matches [*]";
+  expect WildMatch([1, 2, 3], [-1], 0, 0), "[1,2,3] matches [*]";
+
+  // Star with prefix/suffix
+  expect WildMatch([1, 2, 3], [1, -1], 0, 0), "[1,2,3] matches [1,*]";
+  expect WildMatch([1, 2, 3], [-1, 3], 0, 0), "[1,2,3] matches [*,3]";
+  expect !WildMatch([1, 2, 3], [2, -1], 0, 0), "[1,2,3] does not match [2,*]";
+
+  // Star in middle
+  expect WildMatch([1, 2, 3], [1, -1, 3], 0, 0), "[1,2,3] matches [1,*,3]";
+  expect WildMatch([1, 3], [1, -1, 3], 0, 0), "[1,3] matches [1,*,3]";
+
+  // Multiple stars
+  expect WildMatch([1, 2, 3], [-1, -1], 0, 0), "[1,2,3] matches [*,*]";
+
+  // Empty cases
+  expect WildMatch([], [], 0, 0), "[] matches []";
+  expect !WildMatch([1], [], 0, 0), "[1] does not match []";
+  expect !WildMatch([], [1], 0, 0), "[] does not match [1]";
+  expect WildMatch([], [-1], 0, 0), "[] matches [*]";
+
+  // Negative: star does not help wrong chars
+  expect !WildMatch([1, 2, 3], [-1, 4], 0, 0), "[1,2,3] does not match [*,4]";
+
+  print "All spec tests passed\n";
 }
