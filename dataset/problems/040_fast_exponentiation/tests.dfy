@@ -1,4 +1,4 @@
-// Fast Exponentiation -- Test cases
+// Fast Exponentiation -- Runtime spec tests
 
 function Power(base: int, exp: nat): int
 {
@@ -6,36 +6,25 @@ function Power(base: int, exp: nat): int
   else base * Power(base, exp - 1)
 }
 
-method {:axiom} FastPow(base: int, exp: nat) returns (result: int)
-  ensures result == Power(base, exp)
+method Main() {
+  // Known powers
+  expect Power(2, 0) == 1, "2^0 = 1";
+  expect Power(2, 1) == 2, "2^1 = 2";
+  expect Power(2, 10) == 1024, "2^10 = 1024";
+  expect Power(3, 3) == 27, "3^3 = 27";
+  expect Power(5, 0) == 1, "5^0 = 1";
+  expect Power(7, 1) == 7, "7^1 = 7";
+  expect Power(1, 100) == 1, "1^100 = 1";
+  expect Power(0, 5) == 0, "0^5 = 0";
 
-method TestPow2_10()
-{
-  var r := FastPow(2, 10);
-  assert Power(2, 10) == 2 * Power(2, 9);
-  // We can verify via the spec
-  assert r == Power(2, 10);
-}
+  // Negative base
+  expect Power(-2, 3) == -8, "(-2)^3 = -8";
+  expect Power(-2, 2) == 4, "(-2)^2 = 4";
+  expect Power(-1, 0) == 1, "(-1)^0 = 1";
 
-method TestPow0()
-{
-  var r := FastPow(5, 0);
-  assert Power(5, 0) == 1;
-  assert r == 1;
-}
+  // Wrong answers
+  expect Power(2, 10) != 1023, "2^10 is not 1023";
+  expect Power(3, 3) != 9, "3^3 is not 9";
 
-method TestPow1()
-{
-  var r := FastPow(7, 1);
-  assert Power(7, 1) == 7 * Power(7, 0) == 7;
-  assert r == 7;
-}
-
-method TestPowNegBase()
-{
-  var r := FastPow(-2, 3);
-  assert Power(-2, 3) == -2 * Power(-2, 2);
-  assert Power(-2, 2) == -2 * Power(-2, 1);
-  assert Power(-2, 1) == -2 * Power(-2, 0) == -2;
-  assert r == -8;
+  print "All spec tests passed\n";
 }

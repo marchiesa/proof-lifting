@@ -1,36 +1,36 @@
-// Suffix Array Construction -- Test cases
+// Suffix Array Construction -- Runtime spec tests
 
 predicate IsPermutation(sa: seq<int>, n: int)
 {
   |sa| == n &&
-  (forall i :: 0 <= i < n ==> 0 <= sa[i] < n) &&
-  (forall i, j :: 0 <= i < j < n ==> sa[i] != sa[j])
+  (forall i | 0 <= i < n :: 0 <= sa[i] < n) &&
+  (forall i, j | 0 <= i < j < n :: sa[i] != sa[j])
 }
 
-method {:axiom} SuffixArray(s: seq<int>) returns (sa: seq<int>)
-  requires |s| > 0
-  ensures |sa| == |s|
-  ensures IsPermutation(sa, |s|)
+method Main() {
+  // IsPermutation positive cases
+  expect IsPermutation([0], 1), "[0] is perm of size 1";
+  expect IsPermutation([0, 1], 2), "[0,1] is perm of size 2";
+  expect IsPermutation([1, 0], 2), "[1,0] is perm of size 2";
+  expect IsPermutation([2, 0, 1], 3), "[2,0,1] is perm of size 3";
+  expect IsPermutation([], 0), "empty is perm of size 0";
 
-method TestSingle()
-{
-  var sa := SuffixArray([42]);
-  assert |sa| == 1;
-  assert sa[0] == 0;
-}
+  // IsPermutation negative: wrong length
+  expect !IsPermutation([0, 1], 3), "length mismatch";
+  expect !IsPermutation([0, 1, 2], 2), "too long";
 
-method TestTwo()
-{
-  var sa := SuffixArray([1, 2]);
-  assert |sa| == 2;
-  assert sa[0] != sa[1];
-  assert 0 <= sa[0] < 2;
-  assert 0 <= sa[1] < 2;
-}
+  // IsPermutation negative: out of range
+  expect !IsPermutation([0, 3], 2), "3 out of range for n=2";
+  expect !IsPermutation([-1, 0], 2), "-1 out of range";
 
-method TestRepeated()
-{
-  var sa := SuffixArray([1, 1, 1]);
-  assert |sa| == 3;
-  assert IsPermutation(sa, 3);
+  // IsPermutation negative: duplicates
+  expect !IsPermutation([0, 0], 2), "duplicate 0s";
+  expect !IsPermutation([1, 1, 0], 3), "duplicate 1s";
+
+  // Suffix array example: s = [2, 1, 3]
+  // Suffixes: [2,1,3] at 0, [1,3] at 1, [3] at 2
+  // Sorted: [1,3] < [2,1,3] < [3], so sa = [1, 0, 2]
+  expect IsPermutation([1, 0, 2], 3), "suffix array of [2,1,3] is valid permutation";
+
+  print "All spec tests passed\n";
 }

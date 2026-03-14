@@ -1,40 +1,36 @@
-// Longest Palindromic Substring -- Test cases
+// Longest Palindromic Substring -- Runtime spec tests
 
-predicate IsPalin(s: seq<int>, lo: int, hi: int)
+predicate IsPalindrome(s: seq<int>, lo: int, hi: int)
   requires 0 <= lo <= hi <= |s|
 {
-  forall k :: 0 <= k < (hi - lo) / 2 ==> s[lo + k] == s[hi - 1 - k]
+  forall k {:trigger s[lo + k]} | 0 <= k < (hi - lo) / 2 :: s[lo + k] == s[hi - 1 - k]
 }
 
-method {:axiom} LongestPalindrome(s: seq<int>) returns (start: int, length: int)
-  requires |s| > 0
-  ensures 0 <= start
-  ensures length > 0
-  ensures start + length <= |s|
-  ensures IsPalin(s, start, start + length)
+method Main() {
+  // IsPalindrome positive cases
+  var s1 := [1, 2, 3, 2, 1];
+  expect IsPalindrome(s1, 0, 5), "[1,2,3,2,1] is palindrome";
+  expect IsPalindrome(s1, 1, 4), "[2,3,2] is palindrome";
+  expect IsPalindrome(s1, 2, 3), "[3] singleton is palindrome";
+  expect IsPalindrome(s1, 0, 0), "empty range is palindrome";
 
-method TestPalindrome()
-{
-  var st, ln := LongestPalindrome([1, 2, 3, 2, 1]);
-  assert IsPalin([1, 2, 3, 2, 1], st, st + ln);
-  assert ln > 0;
-}
+  var s2 := [5, 5, 5, 5];
+  expect IsPalindrome(s2, 0, 4), "all same is palindrome";
+  expect IsPalindrome(s2, 0, 2), "prefix of all-same is palindrome";
 
-method TestSingle()
-{
-  var st, ln := LongestPalindrome([42]);
-  assert ln > 0;
-  assert st + ln <= 1;
-}
+  var s3 := [1, 2, 2, 1];
+  expect IsPalindrome(s3, 0, 4), "[1,2,2,1] even palindrome";
 
-method TestAllSame()
-{
-  var st, ln := LongestPalindrome([5, 5, 5, 5]);
-  assert IsPalin([5, 5, 5, 5], st, st + ln);
-}
+  // IsPalindrome negative cases
+  var s4 := [1, 2, 3, 4];
+  expect !IsPalindrome(s4, 0, 4), "[1,2,3,4] is not palindrome";
+  expect !IsPalindrome(s4, 0, 3), "[1,2,3] is not palindrome";
 
-method TestNoPalin()
-{
-  var st, ln := LongestPalindrome([1, 2, 3, 4]);
-  assert ln > 0;
+  var s5 := [1, 2, 1, 3];
+  expect !IsPalindrome(s5, 0, 4), "[1,2,1,3] is not palindrome";
+
+  // Single element is always palindrome
+  expect IsPalindrome([42], 0, 1), "single element palindrome";
+
+  print "All spec tests passed\n";
 }

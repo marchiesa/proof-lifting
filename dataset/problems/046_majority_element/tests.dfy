@@ -1,4 +1,4 @@
-// Majority Element -- Test cases
+// Majority Element -- Runtime spec tests
 
 function Count(a: seq<int>, val: int): nat
 {
@@ -11,37 +11,29 @@ predicate IsMajority(a: seq<int>, val: int)
   2 * Count(a, val) > |a|
 }
 
-method {:axiom} FindMajority(a: seq<int>) returns (candidate: int)
-  requires |a| > 0
-  requires exists v :: IsMajority(a, v)
-  ensures candidate in a
+method Main() {
+  // Count function tests
+  expect Count([], 1) == 0, "count in empty is 0";
+  expect Count([1], 1) == 1, "count of 1 in [1] is 1";
+  expect Count([1, 2, 1], 1) == 2, "count of 1 in [1,2,1] is 2";
+  expect Count([1, 2, 3], 4) == 0, "count of absent element is 0";
+  expect Count([3, 3, 3, 2, 1], 3) == 3, "count of 3 in [3,3,3,2,1] is 3";
+  expect Count([5, 5, 5, 5], 5) == 4, "count of 5 in all-fives is 4";
 
-method TestClear()
-{
-  var a := [3, 3, 3, 2, 1];
-  // Prove 3 is a majority: Count([3,3,3,2,1], 3) = 3, and 2*3 > 5
-  assert a[0] == 3;
-  assert a[1..] == [3, 3, 2, 1];
-  assert a[1..][0] == 3;
-  assert a[1..][1..] == [3, 2, 1];
-  assert a[1..][1..][0] == 3;
-  assert a[1..][1..][1..] == [2, 1];
-  assert Count([2, 1], 3) == Count([1], 3);
-  assert Count([1], 3) == Count([], 3);
-  assert Count([], 3) == 0;
-  assert Count(a, 3) == 3;
-  assert IsMajority(a, 3);
-  var c := FindMajority(a);
-  assert c in a;
-}
+  // IsMajority positive cases
+  expect IsMajority([3, 3, 3, 2, 1], 3), "3 is majority of [3,3,3,2,1]";
+  expect IsMajority([1], 1), "1 is majority of [1]";
+  expect IsMajority([5, 5, 5, 5], 5), "5 is majority of all-fives";
+  expect IsMajority([1, 1, 2], 1), "1 is majority of [1,1,2]";
 
-method TestMinimal()
-{
-  var a := [1];
-  assert a[0] == 1;
-  assert a[1..] == [];
-  assert Count(a, 1) == 1;
-  assert IsMajority(a, 1);
-  var c := FindMajority(a);
-  assert c in a;
+  // IsMajority negative cases
+  expect !IsMajority([1, 2, 3], 1), "1 is not majority of [1,2,3]";
+  expect !IsMajority([1, 1, 2, 2], 1), "1 is not majority of [1,1,2,2] (tie)";
+  expect !IsMajority([3, 3, 3, 2, 1], 2), "2 is not majority";
+  expect !IsMajority([], 1), "no majority in empty";
+
+  // Wrong answer check
+  expect Count([3, 3, 3, 2, 1], 3) != 2, "count of 3 is not 2";
+
+  print "All spec tests passed\n";
 }

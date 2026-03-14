@@ -1,46 +1,50 @@
-// Array Intersection of Two Sorted Arrays -- Test cases
+// Array Intersection of Two Sorted Arrays -- Runtime spec tests
+
+predicate IsSorted(a: seq<int>)
+{
+  forall i, j | 0 <= i < j < |a| :: a[i] <= a[j]
+}
 
 predicate StrictlySorted(a: seq<int>)
 {
-  forall i, j :: 0 <= i < j < |a| ==> a[i] < a[j]
+  forall i, j | 0 <= i < j < |a| :: a[i] < a[j]
 }
 
 predicate IsSubsetOf(a: seq<int>, b: seq<int>)
 {
-  forall x :: x in a ==> x in b
+  forall x | x in a :: x in b
 }
 
-method {:axiom} Intersection(a: seq<int>, b: seq<int>) returns (result: seq<int>)
-  requires StrictlySorted(a)
-  requires StrictlySorted(b)
-  ensures StrictlySorted(result)
-  ensures IsSubsetOf(result, a)
-  ensures IsSubsetOf(result, b)
-  ensures forall x :: x in a && x in b ==> x in result
+method Main() {
+  // IsSorted positive
+  expect IsSorted([1, 2, 3, 4]), "ascending is sorted";
+  expect IsSorted([1, 1, 2, 3]), "non-decreasing is sorted";
+  expect IsSorted([]), "empty is sorted";
+  expect IsSorted([5]), "singleton is sorted";
 
-method TestBasic()
-{
-  var r := Intersection([1, 3, 5, 7], [2, 3, 5, 8]);
-  assert 3 in r;
-  assert 5 in r;
-}
+  // IsSorted negative
+  expect !IsSorted([3, 1, 2]), "unsorted is not sorted";
+  expect !IsSorted([2, 1]), "descending pair not sorted";
 
-method TestNoOverlap()
-{
-  var r := Intersection([1, 3, 5], [2, 4, 6]);
-  assert StrictlySorted(r);
-}
+  // StrictlySorted positive
+  expect StrictlySorted([1, 2, 3, 4]), "ascending is strictly sorted";
+  expect StrictlySorted([]), "empty is strictly sorted";
+  expect StrictlySorted([5]), "singleton is strictly sorted";
 
-method TestEmpty()
-{
-  var r := Intersection([], [1, 2, 3]);
-  assert StrictlySorted(r);
-}
+  // StrictlySorted negative
+  expect !StrictlySorted([1, 1, 2, 3]), "duplicates not strictly sorted";
+  expect !StrictlySorted([3, 1]), "descending not strictly sorted";
+  expect !StrictlySorted([1, 2, 2, 3]), "adjacent dups not strictly sorted";
 
-method TestIdentical()
-{
-  var r := Intersection([1, 2, 3], [1, 2, 3]);
-  assert 1 in r;
-  assert 2 in r;
-  assert 3 in r;
+  // IsSubsetOf positive
+  expect IsSubsetOf([1, 3], [1, 2, 3, 4]), "[1,3] subset of [1,2,3,4]";
+  expect IsSubsetOf([], [1, 2, 3]), "empty is subset of anything";
+  expect IsSubsetOf([1, 2], [1, 2]), "same seq is subset";
+  expect IsSubsetOf([], []), "empty subset of empty";
+
+  // IsSubsetOf negative
+  expect !IsSubsetOf([1, 5], [1, 2, 3]), "[1,5] not subset of [1,2,3]";
+  expect !IsSubsetOf([10], [1, 2, 3]), "[10] not subset of [1,2,3]";
+
+  print "All spec tests passed\n";
 }

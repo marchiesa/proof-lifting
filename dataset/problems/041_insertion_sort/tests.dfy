@@ -1,48 +1,28 @@
-// Insertion Sort -- Test cases
+// Insertion Sort -- Runtime spec tests
 
 predicate IsSorted(a: seq<int>)
 {
-  forall i, j :: 0 <= i < j < |a| ==> a[i] <= a[j]
+  forall i, j | 0 <= i < j < |a| :: a[i] <= a[j]
 }
 
-method {:axiom} InsertionSort(a: array<int>)
-  modifies a
-  ensures IsSorted(a[..])
-  ensures multiset(a[..]) == old(multiset(a[..]))
+method Main() {
+  // IsSorted positive
+  expect IsSorted([]), "empty sorted";
+  expect IsSorted([42]), "singleton sorted";
+  expect IsSorted([1, 2, 3, 4, 5]), "ascending sorted";
+  expect IsSorted([1, 1, 2, 3, 3]), "non-decreasing sorted";
+  expect IsSorted([7, 7, 7]), "all equal sorted";
 
-method TestBasic()
-{
-  var a := new int[] [5, 3, 1, 4, 2];
-  var old_ms := multiset(a[..]);
-  InsertionSort(a);
-  assert IsSorted(a[..]);
-  assert multiset(a[..]) == old_ms;
-}
+  // IsSorted negative
+  expect !IsSorted([5, 3, 1, 4, 2]), "random order not sorted";
+  expect !IsSorted([4, 3, 2, 1]), "reversed not sorted";
+  expect !IsSorted([1, 3, 2]), "single swap not sorted";
 
-method TestAlreadySorted()
-{
-  var a := new int[] [1, 2, 3, 4];
-  InsertionSort(a);
-  assert IsSorted(a[..]);
-}
+  // Multiset preservation property
+  var before := [5, 3, 1, 4, 2];
+  var after := [1, 2, 3, 4, 5];
+  expect IsSorted(after), "sorted version is sorted";
+  expect multiset(before) == multiset(after), "multiset preserved after sorting";
 
-method TestReverse()
-{
-  var a := new int[] [4, 3, 2, 1];
-  InsertionSort(a);
-  assert IsSorted(a[..]);
-}
-
-method TestSingle()
-{
-  var a := new int[] [42];
-  InsertionSort(a);
-  assert IsSorted(a[..]);
-}
-
-method TestEmpty()
-{
-  var a := new int[] [];
-  InsertionSort(a);
-  assert IsSorted(a[..]);
+  print "All spec tests passed\n";
 }

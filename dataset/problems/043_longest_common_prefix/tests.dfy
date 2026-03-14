@@ -1,38 +1,34 @@
-// Longest Common Prefix -- Test cases
+// Longest Common Prefix -- Runtime spec tests
 
 predicate IsCommonPrefix(p: seq<int>, strs: seq<seq<int>>)
 {
-  forall i :: 0 <= i < |strs| ==> |p| <= |strs[i]| && forall k :: 0 <= k < |p| ==> p[k] == strs[i][k]
+  forall i | 0 <= i < |strs| ::
+    |p| <= |strs[i]| && forall k | 0 <= k < |p| :: p[k] == strs[i][k]
 }
 
-method {:axiom} LongestCommonPrefix(strs: seq<seq<int>>) returns (len: nat)
-  requires |strs| > 0
-  requires forall i :: 0 <= i < |strs| ==> |strs[i]| > 0
-  ensures len <= |strs[0]|
-  ensures IsCommonPrefix(strs[0][..len], strs)
-  ensures forall l :: len < l <= |strs[0]| ==> !IsCommonPrefix(strs[0][..l], strs)
+method Main() {
+  // IsCommonPrefix positive cases
+  expect IsCommonPrefix([1, 2], [[1, 2, 3], [1, 2, 4], [1, 2, 5]]),
+    "[1,2] is common prefix of [[1,2,3],[1,2,4],[1,2,5]]";
+  expect IsCommonPrefix([], [[1, 2], [3, 4]]),
+    "empty is common prefix of anything";
+  expect IsCommonPrefix([1, 2, 3], [[1, 2, 3], [1, 2, 3]]),
+    "full string is common prefix when all same";
+  expect IsCommonPrefix([5, 6, 7], [[5, 6, 7]]),
+    "full string is prefix of single-element list";
 
-method TestCommon()
-{
-  // "abc", "abd", "abe" as int seqs
-  var len := LongestCommonPrefix([[1, 2, 3], [1, 2, 4], [1, 2, 5]]);
-  assert IsCommonPrefix([1, 2, 3][..len], [[1, 2, 3], [1, 2, 4], [1, 2, 5]]);
-}
+  // IsCommonPrefix negative cases
+  expect !IsCommonPrefix([1, 2, 3], [[1, 2, 3], [1, 2, 4]]),
+    "[1,2,3] not common prefix when second differs at index 2";
+  expect !IsCommonPrefix([1], [[2, 3], [1, 4]]),
+    "[1] not prefix of [2,3]";
+  expect !IsCommonPrefix([1, 2, 3, 4], [[1, 2, 3]]),
+    "prefix longer than string";
 
-method TestAllSame()
-{
-  var len := LongestCommonPrefix([[1, 2, 3], [1, 2, 3]]);
-  assert IsCommonPrefix([1, 2, 3][..len], [[1, 2, 3], [1, 2, 3]]);
-}
+  // Test longest property: the common prefix [1,2] is valid but [1,2,3] is not
+  var strs := [[1, 2, 3], [1, 2, 4], [1, 2, 5]];
+  expect IsCommonPrefix([1, 2], strs), "length-2 prefix valid";
+  expect !IsCommonPrefix([1, 2, 3], strs), "length-3 prefix not valid";
 
-method TestNoCommon()
-{
-  var len := LongestCommonPrefix([[1, 2], [3, 4]]);
-  assert IsCommonPrefix([1, 2][..len], [[1, 2], [3, 4]]);
-}
-
-method TestSingle()
-{
-  var len := LongestCommonPrefix([[5, 6, 7]]);
-  assert IsCommonPrefix([5, 6, 7][..len], [[5, 6, 7]]);
+  print "All spec tests passed\n";
 }

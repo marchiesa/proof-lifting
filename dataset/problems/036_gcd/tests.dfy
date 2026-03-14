@@ -1,4 +1,4 @@
-// Compute GCD (Euclidean Algorithm) -- Test cases
+// Compute GCD (Euclidean Algorithm) -- Runtime spec tests
 
 function GcdFunc(a: nat, b: nat): nat
   decreases b
@@ -7,28 +7,23 @@ function GcdFunc(a: nat, b: nat): nat
   else GcdFunc(b, a % b)
 }
 
-method {:axiom} Gcd(a: int, b: int) returns (g: int)
-  requires a > 0 && b > 0
-  ensures g == GcdFunc(a, b)
-  ensures g > 0
+method Main() {
+  // Known GCD values
+  expect GcdFunc(12, 8) == 4, "gcd(12,8) = 4";
+  expect GcdFunc(7, 7) == 7, "gcd(7,7) = 7";
+  expect GcdFunc(3, 5) == 1, "gcd(3,5) = 1 (coprime)";
+  expect GcdFunc(100, 25) == 25, "gcd(100,25) = 25";
+  expect GcdFunc(48, 18) == 6, "gcd(48,18) = 6";
+  expect GcdFunc(1, 1) == 1, "gcd(1,1) = 1";
+  expect GcdFunc(17, 1) == 1, "gcd(17,1) = 1";
 
-method TestGcd12_8()
-{
-  var g := Gcd(12, 8);
-  assert GcdFunc(12, 8) == GcdFunc(8, 4) == GcdFunc(4, 0) == 4;
-  assert g == 4;
-}
+  // Wrong answer checks
+  expect GcdFunc(12, 8) != 2, "gcd(12,8) is not 2";
+  expect GcdFunc(12, 8) != 8, "gcd(12,8) is not 8";
 
-method TestGcdEqual()
-{
-  var g := Gcd(7, 7);
-  assert GcdFunc(7, 7) == GcdFunc(7, 0) == 7;
-  assert g == 7;
-}
+  // Base case
+  expect GcdFunc(5, 0) == 5, "gcd(5,0) = 5";
+  expect GcdFunc(0, 0) == 0, "gcd(0,0) = 0";
 
-method TestGcdCoprime()
-{
-  var g := Gcd(3, 5);
-  assert GcdFunc(3, 5) == GcdFunc(5, 3) == GcdFunc(3, 2) == GcdFunc(2, 1) == GcdFunc(1, 0) == 1;
-  assert g == 1;
+  print "All spec tests passed\n";
 }

@@ -1,50 +1,28 @@
-// Check if Array is a Permutation of 0..n-1 -- Test cases
+// Check if Array is a Permutation of 0..n-1 -- Runtime spec tests
 
 predicate IsPermutation(a: seq<int>)
 {
-  (forall i :: 0 <= i < |a| ==> 0 <= a[i] < |a|) &&
-  (forall i, j :: 0 <= i < j < |a| ==> a[i] != a[j])
+  (forall i | 0 <= i < |a| :: 0 <= a[i] < |a|) &&
+  (forall i, j | 0 <= i < j < |a| :: a[i] != a[j])
 }
 
-method {:axiom} CheckPermutation(a: seq<int>) returns (result: bool)
-  ensures result == IsPermutation(a)
+method Main() {
+  // Positive cases
+  expect IsPermutation([]), "empty is a permutation";
+  expect IsPermutation([0]), "[0] is a permutation of 0..1";
+  expect IsPermutation([0, 1]), "[0,1] is a permutation";
+  expect IsPermutation([1, 0]), "[1,0] is a permutation";
+  expect IsPermutation([2, 0, 1]), "[2,0,1] is a permutation";
+  expect IsPermutation([3, 1, 0, 2]), "[3,1,0,2] is a permutation";
 
-method TestValid()
-{
-  var r := CheckPermutation([2, 0, 1]);
-  assert IsPermutation([2, 0, 1]);
-  assert r;
-}
+  // Negative: out of range
+  expect !IsPermutation([0, 1, 5]), "5 out of range for length 3";
+  expect !IsPermutation([1]), "1 out of range for length 1";
+  expect !IsPermutation([-1, 0]), "-1 out of range";
 
-method TestInvalidRange()
-{
-  var r := CheckPermutation([0, 1, 5]);
-  assert !IsPermutation([0, 1, 5]) by {
-    assert [0, 1, 5][2] == 5;
-    assert !(0 <= 5 < 3);
-  }
-  assert !r;
-}
+  // Negative: duplicates
+  expect !IsPermutation([0, 1, 1]), "duplicate 1s";
+  expect !IsPermutation([0, 0]), "duplicate 0s";
 
-method TestDuplicate()
-{
-  var r := CheckPermutation([0, 1, 1]);
-  assert !IsPermutation([0, 1, 1]) by {
-    assert [0, 1, 1][1] == [0, 1, 1][2];
-  }
-  assert !r;
-}
-
-method TestEmpty()
-{
-  var r := CheckPermutation([]);
-  assert IsPermutation([]);
-  assert r;
-}
-
-method TestSingleton()
-{
-  var r := CheckPermutation([0]);
-  assert IsPermutation([0]);
-  assert r;
+  print "All spec tests passed\n";
 }

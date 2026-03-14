@@ -1,48 +1,36 @@
-// Merge Two Sorted Arrays -- Test cases
+// Merge Two Sorted Arrays -- Runtime spec tests
 
 predicate IsSorted(a: seq<int>)
 {
-  forall i, j :: 0 <= i < j < |a| ==> a[i] <= a[j]
+  forall i, j | 0 <= i < j < |a| :: a[i] <= a[j]
 }
 
-method {:axiom} MergeArrays(a: array<int>, b: array<int>) returns (c: array<int>)
-  requires IsSorted(a[..])
-  requires IsSorted(b[..])
-  ensures IsSorted(c[..])
-  ensures c.Length == a.Length + b.Length
-  ensures multiset(c[..]) == multiset(a[..]) + multiset(b[..])
+method Main() {
+  // IsSorted positive
+  expect IsSorted([]), "empty sorted";
+  expect IsSorted([1]), "singleton sorted";
+  expect IsSorted([1, 2, 3, 4, 5]), "ascending sorted";
+  expect IsSorted([1, 1, 2, 2, 3]), "non-decreasing sorted";
+  expect IsSorted([5, 5, 5]), "all equal sorted";
 
-method TestMerge()
-{
-  var a := new int[] [1, 3, 5];
-  var b := new int[] [2, 4, 6];
-  var c := MergeArrays(a, b);
-  assert c.Length == 6;
-  assert IsSorted(c[..]);
-}
+  // IsSorted negative
+  expect !IsSorted([2, 1]), "descending not sorted";
+  expect !IsSorted([1, 3, 2]), "out of order not sorted";
+  expect !IsSorted([5, 4, 3, 2, 1]), "reversed not sorted";
 
-method TestMergeWithEmpty()
-{
-  var a := new int[] [1, 2, 3];
-  var b := new int[] [];
-  var c := MergeArrays(a, b);
-  assert c.Length == 3;
-  assert IsSorted(c[..]);
-}
+  // Test multiset merging property manually
+  var a: seq<int> := [1, 3, 5];
+  var b: seq<int> := [2, 4, 6];
+  var merged: seq<int> := [1, 2, 3, 4, 5, 6];
+  expect IsSorted(merged), "merged result should be sorted";
+  expect multiset(merged) == multiset(a) + multiset(b), "merged multiset equals sum";
 
-method TestMergeBothEmpty()
-{
-  var a := new int[] [];
-  var b := new int[] [];
-  var c := MergeArrays(a, b);
-  assert c.Length == 0;
-}
+  // Another merge scenario
+  var c: seq<int> := [1, 2, 2];
+  var d: seq<int> := [2, 3, 3];
+  var merged2: seq<int> := [1, 2, 2, 2, 3, 3];
+  expect IsSorted(merged2), "merged with dups should be sorted";
+  expect multiset(merged2) == multiset(c) + multiset(d), "multiset preserved with dups";
 
-method TestMergeDuplicates()
-{
-  var a := new int[] [1, 2, 2];
-  var b := new int[] [2, 3, 3];
-  var c := MergeArrays(a, b);
-  assert c.Length == 6;
-  assert IsSorted(c[..]);
+  print "All spec tests passed\n";
 }

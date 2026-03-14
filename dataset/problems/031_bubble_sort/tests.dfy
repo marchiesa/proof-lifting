@@ -1,48 +1,23 @@
-// Bubble Sort -- Test cases
+// Bubble Sort -- Runtime spec tests
 
 predicate IsSorted(a: seq<int>)
 {
-  forall i, j :: 0 <= i < j < |a| ==> a[i] <= a[j]
+  forall i, j | 0 <= i < j < |a| :: a[i] <= a[j]
 }
 
-method {:axiom} BubbleSort(a: array<int>)
-  modifies a
-  ensures IsSorted(a[..])
-  ensures multiset(a[..]) == old(multiset(a[..]))
+method Main() {
+  // Positive cases: sorted sequences
+  expect IsSorted([]), "empty should be sorted";
+  expect IsSorted([1]), "singleton should be sorted";
+  expect IsSorted([1, 2, 3, 4, 5]), "ascending should be sorted";
+  expect IsSorted([1, 1, 1]), "all equal should be sorted";
+  expect IsSorted([1, 1, 2, 3, 3]), "non-decreasing should be sorted";
 
-method TestBasic()
-{
-  var a := new int[] [3, 1, 4, 1, 5];
-  var old_ms := multiset(a[..]);
-  BubbleSort(a);
-  assert IsSorted(a[..]);
-  assert multiset(a[..]) == old_ms;
-}
+  // Negative cases: unsorted sequences
+  expect !IsSorted([2, 1]), "descending pair should not be sorted";
+  expect !IsSorted([3, 1, 2]), "unsorted should not be sorted";
+  expect !IsSorted([1, 3, 2, 4]), "one swap should not be sorted";
+  expect !IsSorted([5, 4, 3, 2, 1]), "reversed should not be sorted";
 
-method TestAlreadySorted()
-{
-  var a := new int[] [1, 2, 3, 4, 5];
-  BubbleSort(a);
-  assert IsSorted(a[..]);
-}
-
-method TestReversed()
-{
-  var a := new int[] [5, 4, 3, 2, 1];
-  BubbleSort(a);
-  assert IsSorted(a[..]);
-}
-
-method TestEmpty()
-{
-  var a := new int[] [];
-  BubbleSort(a);
-  assert IsSorted(a[..]);
-}
-
-method TestSingleElement()
-{
-  var a := new int[] [42];
-  BubbleSort(a);
-  assert IsSorted(a[..]);
+  print "All spec tests passed\n";
 }
