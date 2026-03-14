@@ -1,33 +1,58 @@
-// Integer Square Root -- Test cases
+// Integer Square Root -- Runtime spec tests
 
-method {:axiom} IntSqrt(n: nat) returns (r: nat)
-  ensures r * r <= n
-  ensures (r + 1) * (r + 1) > n
+// The spec is the postcondition: r * r <= n && (r + 1) * (r + 1) > n
+// We test these properties directly on known values.
 
-method TestZero()
+method CheckIntSqrtSpec(n: nat, r: nat) returns (ok: bool)
 {
-  var r := IntSqrt(0);
-  assert r * r <= 0;
-  assert r == 0;
+  ok := r * r <= n && (r + 1) * (r + 1) > n;
 }
 
-method TestOne()
+method Main()
 {
-  var r := IntSqrt(1);
-  assert r * r <= 1;
-  assert (r + 1) * (r + 1) > 1;
-}
+  // Positive tests: correct square roots
+  var r := CheckIntSqrtSpec(0, 0);
+  expect r, "sqrt(0) = 0";
 
-method TestPerfectSquare()
-{
-  var r := IntSqrt(9);
-  assert r * r <= 9;
-  assert (r + 1) * (r + 1) > 9;
-}
+  r := CheckIntSqrtSpec(1, 1);
+  expect r, "sqrt(1) = 1";
 
-method TestNonPerfectSquare()
-{
-  var r := IntSqrt(8);
-  assert r * r <= 8;
-  assert (r + 1) * (r + 1) > 8;
+  r := CheckIntSqrtSpec(4, 2);
+  expect r, "sqrt(4) = 2";
+
+  r := CheckIntSqrtSpec(8, 2);
+  expect r, "sqrt(8) = 2";
+
+  r := CheckIntSqrtSpec(9, 3);
+  expect r, "sqrt(9) = 3";
+
+  r := CheckIntSqrtSpec(15, 3);
+  expect r, "sqrt(15) = 3";
+
+  r := CheckIntSqrtSpec(16, 4);
+  expect r, "sqrt(16) = 4";
+
+  r := CheckIntSqrtSpec(100, 10);
+  expect r, "sqrt(100) = 10";
+
+  r := CheckIntSqrtSpec(2, 1);
+  expect r, "sqrt(2) = 1";
+
+  // Negative tests: wrong square roots
+  r := CheckIntSqrtSpec(4, 1);
+  expect !r, "sqrt(4) != 1";
+
+  r := CheckIntSqrtSpec(4, 3);
+  expect !r, "sqrt(4) != 3";
+
+  r := CheckIntSqrtSpec(9, 2);
+  expect !r, "sqrt(9) != 2";
+
+  r := CheckIntSqrtSpec(9, 4);
+  expect !r, "sqrt(9) != 4";
+
+  r := CheckIntSqrtSpec(0, 1);
+  expect !r, "sqrt(0) != 1";
+
+  print "All spec tests passed\n";
 }

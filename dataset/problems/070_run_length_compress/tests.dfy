@@ -1,4 +1,11 @@
-// Run-Length Compress -- Test cases
+// Run-Length Compress -- Runtime spec tests
+
+// Copy spec functions from task.dfy
+function Repeat(v: int, n: nat): seq<int>
+  decreases n
+{
+  if n == 0 then [] else [v] + Repeat(v, n - 1)
+}
 
 function Expand(vals: seq<int>, counts: seq<nat>): seq<int>
   requires |vals| == |counts|
@@ -8,42 +15,77 @@ function Expand(vals: seq<int>, counts: seq<nat>): seq<int>
   else Repeat(vals[0], counts[0]) + Expand(vals[1..], counts[1..])
 }
 
-function Repeat(v: int, n: nat): seq<int>
-  decreases n
+// Bounded compilable version of NoAdjacentDups
+method NoAdjacentDupsCheck(vals: seq<int>) returns (result: bool)
 {
-  if n == 0 then [] else [v] + Repeat(v, n - 1)
+  if |vals| <= 1 { return true; }
+  var i := 0;
+  while i < |vals| - 1
+  {
+    if vals[i] == vals[i + 1] { return false; }
+    i := i + 1;
+  }
+  return true;
 }
 
-predicate NoAdjacentDups(vals: seq<int>)
+// Bounded compilable version of AllPositive
+method AllPositiveCheck(counts: seq<nat>) returns (result: bool)
 {
-  forall i :: 0 <= i < |vals| - 1 ==> vals[i] != vals[i + 1]
+  var i := 0;
+  while i < |counts|
+  {
+    if counts[i] == 0 { return false; }
+    i := i + 1;
+  }
+  return true;
 }
 
-predicate AllPositive(counts: seq<nat>)
+method Main()
 {
-  forall i :: 0 <= i < |counts| ==> counts[i] > 0
-}
+  // Test Repeat function
+  expect Repeat(3, 0) == [], "Repeat(3,0) should be []";
+  expect Repeat(3, 1) == [3], "Repeat(3,1) should be [3]";
+  expect Repeat(3, 3) == [3, 3, 3], "Repeat(3,3) should be [3,3,3]";
+  expect Repeat(0, 2) == [0, 0], "Repeat(0,2) should be [0,0]";
 
-method {:axiom} Compress(s: seq<int>) returns (vals: seq<int>, counts: seq<nat>)
-  ensures |vals| == |counts|
-  ensures NoAdjacentDups(vals)
-  ensures AllPositive(counts)
-  ensures Expand(vals, counts) == s
+  // Test Expand function
+  expect Expand([], []) == [], "Expand([],[]) should be []";
+  expect Expand([1], [3]) == [1, 1, 1], "Expand([1],[3]) should be [1,1,1]";
+  expect Expand([1, 2], [2, 3]) == [1, 1, 2, 2, 2], "Expand([1,2],[2,3]) should be [1,1,2,2,2]";
+  expect Expand([1, 2, 3], [1, 1, 1]) == [1, 2, 3], "Expand single counts should return vals";
 
-method TestBasic()
-{
-  var vals, counts := Compress([1, 1, 2, 3, 3, 3]);
-  assert Expand(vals, counts) == [1, 1, 2, 3, 3, 3];
-}
+  // Test Expand matches original: [1,1,2,3,3,3]
+  expect Expand([1, 2, 3], [2, 1, 3]) == [1, 1, 2, 3, 3, 3],
+    "Expand([1,2,3],[2,1,3]) should be [1,1,2,3,3,3]";
 
-method TestSingle()
-{
-  var vals, counts := Compress([5]);
-  assert Expand(vals, counts) == [5];
-}
+  // Test NoAdjacentDups
+  var r := NoAdjacentDupsCheck([1, 2, 3]);
+  expect r, "[1,2,3] has no adjacent dups";
 
-method TestEmpty()
-{
-  var vals, counts := Compress([]);
-  assert |vals| == 0;
+  r := NoAdjacentDupsCheck([1, 1, 2]);
+  expect !r, "[1,1,2] has adjacent dups";
+
+  r := NoAdjacentDupsCheck([]);
+  expect r, "[] has no adjacent dups";
+
+  r := NoAdjacentDupsCheck([5]);
+  expect r, "[5] has no adjacent dups";
+
+  r := NoAdjacentDupsCheck([1, 2, 1]);
+  expect r, "[1,2,1] has no adjacent dups (non-adjacent same values ok)";
+
+  // Test AllPositive
+  r := AllPositiveCheck([1, 2, 3]);
+  expect r, "[1,2,3] all positive";
+
+  r := AllPositiveCheck([0, 1, 2]);
+  expect !r, "[0,1,2] not all positive (0 present)";
+
+  r := AllPositiveCheck([]);
+  expect r, "[] vacuously all positive";
+
+  // Negative test: wrong Expand
+  expect Expand([1, 2], [2, 3]) != [1, 1, 2, 2], "Wrong count should give wrong result";
+
+  print "All spec tests passed\n";
 }
