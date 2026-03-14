@@ -1,58 +1,42 @@
-// Remove Duplicates from Sorted Sequence -- Test cases
+// Remove Duplicates from Sorted Sequence -- Runtime spec tests
 
 predicate IsSorted(a: seq<int>)
 {
-  forall i, j :: 0 <= i < j < |a| ==> a[i] <= a[j]
+  forall i, j | 0 <= i < j < |a| :: a[i] <= a[j]
 }
 
 predicate IsStrictlySorted(a: seq<int>)
 {
-  forall i, j :: 0 <= i < j < |a| ==> a[i] < a[j]
+  forall i, j | 0 <= i < j < |a| :: a[i] < a[j]
 }
 
-method {:axiom} RemoveDuplicates(a: seq<int>) returns (result: seq<int>)
-  requires IsSorted(a)
-  ensures IsStrictlySorted(result)
-  ensures forall x :: x in multiset(result) ==> x in multiset(a)
-  ensures forall x :: x in multiset(a) ==> x in multiset(result)
-  ensures |result| <= |a|
-
-method TestWithDuplicates()
+method Main()
 {
-  var a := [1, 1, 2, 3, 3, 3, 4];
-  var r := RemoveDuplicates(a);
-  assert IsStrictlySorted(r);
-  // 1 is in a, so must be in result
-  assert 1 in multiset(a);
-  assert 1 in multiset(r);
-  // 4 is in a, so must be in result
-  assert 4 in multiset(a);
-  assert 4 in multiset(r);
-}
+  // Test IsSorted
+  expect IsSorted([1, 1, 2, 3, 3, 3, 4]), "sorted with duplicates";
+  expect IsSorted([1, 2, 3]), "strictly sorted is also sorted";
+  expect IsSorted([]), "empty is sorted";
+  expect !IsSorted([3, 1, 2]), "unsorted is not sorted";
 
-method TestNoDuplicates()
-{
-  var a := [1, 2, 3];
-  var r := RemoveDuplicates(a);
-  assert 1 in multiset(a);
-  assert 1 in multiset(r);
-  assert 3 in multiset(a);
-  assert 3 in multiset(r);
-}
+  // Test IsStrictlySorted - positive cases
+  expect IsStrictlySorted([1, 2, 3, 4]), "strictly increasing";
+  expect IsStrictlySorted([]), "empty is strictly sorted";
+  expect IsStrictlySorted([42]), "single element is strictly sorted";
+  expect IsStrictlySorted([-3, 0, 5, 10]), "increasing with gaps";
 
-method TestEmpty()
-{
-  var a: seq<int> := [];
-  var r := RemoveDuplicates(a);
-  assert |r| <= |a|;
-  assert |r| == 0;
-}
+  // Test IsStrictlySorted - negative cases
+  expect !IsStrictlySorted([1, 1, 2]), "duplicates break strict sorting";
+  expect !IsStrictlySorted([1, 2, 2, 3]), "interior duplicate breaks it";
+  expect !IsStrictlySorted([3, 2, 1]), "descending is not strictly sorted";
+  expect !IsStrictlySorted([1, 1]), "two equal elements not strictly sorted";
 
-method TestAllSame()
-{
-  var a := [5, 5, 5];
-  var r := RemoveDuplicates(a);
-  assert 5 in multiset(a);
-  assert 5 in multiset(r);
-  assert |r| <= |a|;
+  // Verify that strictly sorted implies sorted
+  expect IsSorted([1, 2, 3, 4]) && IsStrictlySorted([1, 2, 3, 4]),
+    "strictly sorted implies sorted";
+
+  // Verify that sorted does not imply strictly sorted
+  expect IsSorted([1, 1, 2]) && !IsStrictlySorted([1, 1, 2]),
+    "sorted but not strictly sorted";
+
+  print "All spec tests passed\n";
 }

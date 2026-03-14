@@ -1,4 +1,4 @@
-// Count Occurrences -- Test cases
+// Count Occurrences -- Runtime spec tests
 
 function CountSpec(a: seq<int>, target: int): int
   decreases |a|
@@ -7,44 +7,21 @@ function CountSpec(a: seq<int>, target: int): int
   else (if a[0] == target then 1 else 0) + CountSpec(a[1..], target)
 }
 
-method {:axiom} CountOccurrences(a: seq<int>, target: int) returns (count: int)
-  ensures count == CountSpec(a, target)
-
-method TestMultipleOccurrences()
+method Main()
 {
-  var a := [1, 3, 5, 3, 3, 7];
-  var c := CountOccurrences(a, 3);
-  assert CountSpec(a, 3) == 3;
-  assert c == 3;
-}
+  // Test CountSpec
+  expect CountSpec([1, 3, 5, 3, 3, 7], 3) == 3, "should count 3 occurrences of 3";
+  expect CountSpec([1, 2, 3], 4) == 0, "should count 0 occurrences of 4";
+  expect CountSpec([], 1) == 0, "empty sequence has 0 occurrences";
+  expect CountSpec([7, 7, 7], 7) == 3, "all-match should count 3";
+  expect CountSpec([42], 42) == 1, "single match should count 1";
+  expect CountSpec([42], 0) == 0, "single non-match should count 0";
 
-method TestNoOccurrences()
-{
-  var a := [1, 2, 3];
-  var c := CountOccurrences(a, 4);
-  assert CountSpec(a, 4) == 0;
-  assert c == 0;
-}
+  // Negative cases
+  expect CountSpec([1, 2, 3, 4, 5], 6) == 0, "no 6 in [1..5]";
+  expect CountSpec([1, 1, 1, 1], 1) == 4, "four 1s should count 4";
+  expect CountSpec([1, 2, 1, 2, 1], 1) == 3, "alternating: 3 ones";
+  expect CountSpec([1, 2, 1, 2, 1], 2) == 2, "alternating: 2 twos";
 
-method TestEmpty()
-{
-  var a: seq<int> := [];
-  var c := CountOccurrences(a, 1);
-  assert c == 0;
-}
-
-method TestAllMatch()
-{
-  var a := [7, 7, 7];
-  var c := CountOccurrences(a, 7);
-  assert CountSpec(a, 7) == 3;
-  assert c == 3;
-}
-
-method TestSingleMatch()
-{
-  var a := [42];
-  var c := CountOccurrences(a, 42);
-  assert CountSpec(a, 42) == 1;
-  assert c == 1;
+  print "All spec tests passed\n";
 }

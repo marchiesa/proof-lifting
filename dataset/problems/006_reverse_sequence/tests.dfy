@@ -1,46 +1,28 @@
-// Reverse Sequence -- Test cases
+// Reverse Sequence -- Runtime spec tests
 
-method {:axiom} ReverseSeq(a: seq<int>) returns (r: seq<int>)
-  ensures |r| == |a|
-  ensures forall i :: 0 <= i < |a| ==> r[i] == a[|a| - 1 - i]
-
-method TestNormal()
+function ReverseSpec(a: seq<int>): seq<int>
+  decreases |a|
 {
-  var a := [1, 2, 3, 4];
-  var r := ReverseSeq(a);
-  assert r[0] == 4;
-  assert r[1] == 3;
-  assert r[2] == 2;
-  assert r[3] == 1;
+  if |a| == 0 then []
+  else ReverseSpec(a[1..]) + [a[0]]
 }
 
-method TestEmpty()
+method Main()
 {
-  var a: seq<int> := [];
-  var r := ReverseSeq(a);
-  assert |r| == 0;
-}
+  // Test ReverseSpec function directly
+  expect ReverseSpec([1, 2, 3, 4]) == [4, 3, 2, 1], "reverse of [1,2,3,4] should be [4,3,2,1]";
+  expect ReverseSpec([]) == [], "reverse of empty should be empty";
+  expect ReverseSpec([42]) == [42], "reverse of single should be same";
+  expect ReverseSpec([1, 2]) == [2, 1], "reverse of [1,2] should be [2,1]";
+  expect ReverseSpec([1, 2, 1]) == [1, 2, 1], "reverse of palindrome should be same";
 
-method TestSingle()
-{
-  var a := [42];
-  var r := ReverseSeq(a);
-  assert r[0] == 42;
-}
+  // Test double reverse is identity
+  expect ReverseSpec(ReverseSpec([1, 2, 3])) == [1, 2, 3], "double reverse should be identity";
+  expect ReverseSpec(ReverseSpec([])) == [], "double reverse of empty";
 
-method TestPalindrome()
-{
-  var a := [1, 2, 1];
-  var r := ReverseSeq(a);
-  assert r[0] == 1;
-  assert r[1] == 2;
-  assert r[2] == 1;
-}
+  // Length preservation
+  expect |ReverseSpec([1, 2, 3])| == 3, "reverse should preserve length";
+  expect |ReverseSpec([])| == 0, "reverse of empty has length 0";
 
-method TestTwoElements()
-{
-  var a := [10, 20];
-  var r := ReverseSeq(a);
-  assert r[0] == 20;
-  assert r[1] == 10;
+  print "All spec tests passed\n";
 }

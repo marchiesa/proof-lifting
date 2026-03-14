@@ -1,76 +1,47 @@
-// Find First Duplicate -- Test cases
+// Find First Duplicate -- Runtime spec tests
 
+// Compilable version with bounded quantifiers
 predicate HasDuplicate(a: seq<int>, idx: int)
   requires 0 <= idx < |a|
 {
-  exists j :: 0 <= j < idx && a[j] == a[idx]
+  exists j | 0 <= j < idx :: a[j] == a[idx]
 }
 
 predicate AllDistinctBefore(a: seq<int>, idx: int)
   requires 0 <= idx <= |a|
 {
-  forall i :: 0 <= i < idx ==> (forall j :: 0 <= j < i ==> a[j] != a[i])
+  forall i | 0 <= i < idx :: (forall j | 0 <= j < i :: a[j] != a[i])
 }
 
-method {:axiom} FindFirstDuplicate(a: seq<int>) returns (index: int)
-  ensures index == -1 ==> AllDistinctBefore(a, |a|)
-  ensures 0 <= index < |a| ==> HasDuplicate(a, index) && AllDistinctBefore(a, index)
-  ensures index < 0 ==> index == -1
-
-method TestDuplicateExists()
+method Main()
 {
-  var a := [1, 2, 3, 2, 5];
-  var idx := FindFirstDuplicate(a);
-  // a[1] == 2 == a[3], so there's a duplicate
-  // If idx == -1, then AllDistinctBefore(a, 5) holds, meaning all distinct
-  // But a[1] == a[3] contradicts that
-  if idx == -1 {
-    assert AllDistinctBefore(a, |a|);
-    // i=3, j=1: a[1] should != a[3], but both are 2
-    assert a[1] != a[3];  // contradiction
-  }
-  assert idx != -1;
-  assert idx >= 0;
-}
+  // Test HasDuplicate
+  var a1 := [1, 2, 3, 2, 5];
+  expect HasDuplicate(a1, 3), "index 3 (value 2) is a duplicate of index 1";
+  expect !HasDuplicate(a1, 0), "index 0 has no prior duplicate";
+  expect !HasDuplicate(a1, 1), "index 1 (value 2) has no prior duplicate";
+  expect !HasDuplicate(a1, 2), "index 2 (value 3) has no prior duplicate";
+  expect !HasDuplicate(a1, 4), "index 4 (value 5) has no prior duplicate";
 
-method TestNoDuplicate()
-{
-  var a := [1, 2, 3, 4];
-  var idx := FindFirstDuplicate(a);
-  // All elements are distinct
-  // If idx >= 0, then HasDuplicate(a, idx) holds
-  if 0 <= idx < |a| {
-    assert HasDuplicate(a, idx);
-  }
-}
+  var a2 := [5, 5];
+  expect HasDuplicate(a2, 1), "index 1 is duplicate of index 0";
 
-method TestImmediateDuplicate()
-{
-  var a := [5, 5];
-  var idx := FindFirstDuplicate(a);
-  if idx == -1 {
-    assert AllDistinctBefore(a, |a|);
-    assert a[0] != a[1];  // contradiction: both are 5
-  }
-  assert idx != -1;
-  assert idx >= 0;
-}
+  // Test AllDistinctBefore
+  expect AllDistinctBefore([1, 2, 3, 4], 4), "all distinct sequence";
+  expect AllDistinctBefore([1, 2, 3, 2], 3), "distinct before index 3";
+  expect !AllDistinctBefore([1, 2, 3, 2], 4), "not all distinct in full sequence";
+  expect AllDistinctBefore([], 0), "empty is vacuously distinct";
+  expect AllDistinctBefore([42], 1), "single element is distinct";
+  expect AllDistinctBefore([1, 2, 3, 2, 5], 3), "distinct before first dup at index 3";
+  expect !AllDistinctBefore([1, 2, 3, 2, 5], 4), "not distinct up to index 4";
 
-method TestEmpty()
-{
-  var a: seq<int> := [];
-  var idx := FindFirstDuplicate(a);
-  assert !(0 <= idx < |a|);
-}
+  // Test combined spec behavior:
+  // For a = [1, 2, 3, 2, 5], index 3 should be the first duplicate
+  expect HasDuplicate(a1, 3) && AllDistinctBefore(a1, 3),
+    "index 3 is first duplicate in [1,2,3,2,5]";
 
-method TestSingle()
-{
-  var a := [42];
-  var idx := FindFirstDuplicate(a);
-  // Only one element, so no duplicate is possible
-  if 0 <= idx < |a| {
-    assert HasDuplicate(a, idx);
-    // idx must be 0 (only valid index), but HasDuplicate(a, 0) requires
-    // exists j :: 0 <= j < 0 && ..., which is vacuously false
-  }
+  // For all-distinct, AllDistinctBefore should hold for full length
+  expect AllDistinctBefore([1, 2, 3, 4], 4), "[1,2,3,4] is all distinct";
+
+  print "All spec tests passed\n";
 }

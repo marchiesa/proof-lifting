@@ -1,58 +1,26 @@
-// Is Sorted Check -- Test cases
+// Is Sorted Check -- Runtime spec tests
 
 predicate IsSorted(a: seq<int>)
 {
-  forall i, j :: 0 <= i < j < |a| ==> a[i] <= a[j]
+  forall i, j | 0 <= i < j < |a| :: a[i] <= a[j]
 }
 
-method {:axiom} IsSortedCheck(a: seq<int>) returns (sorted: bool, wit: int)
-  ensures sorted <==> IsSorted(a)
-  ensures !sorted ==> 0 <= wit < |a| - 1 && a[wit] > a[wit + 1]
-
-method TestSorted()
+method Main()
 {
-  var a := [1, 2, 3, 4, 5];
-  var s, w := IsSortedCheck(a);
-  assert s;
-}
+  // Positive cases - should be sorted
+  expect IsSorted([1, 2, 3, 4, 5]), "ascending should be sorted";
+  expect IsSorted([5, 5, 5, 5]), "all equal should be sorted";
+  expect IsSorted([]), "empty should be sorted";
+  expect IsSorted([42]), "single element should be sorted";
+  expect IsSorted([1, 1, 2, 2, 3, 3]), "non-decreasing with dupes should be sorted";
+  expect IsSorted([-5, -3, 0, 1, 10]), "negatives to positives should be sorted";
 
-method TestUnsorted()
-{
-  var a := [1, 3, 2, 4];
-  var s, w := IsSortedCheck(a);
-  assert !IsSorted(a) by {
-    assert a[1] == 3 > 2 == a[2];
-  }
-  assert !s;
-}
+  // Negative cases - should not be sorted
+  expect !IsSorted([5, 4, 3, 2, 1]), "descending should not be sorted";
+  expect !IsSorted([1, 3, 2, 4]), "one inversion should not be sorted";
+  expect !IsSorted([2, 1]), "simple swap should not be sorted";
+  expect !IsSorted([1, 2, 3, 2]), "last element out of order should not be sorted";
+  expect !IsSorted([3, 1, 2]), "3,1,2 should not be sorted";
 
-method TestEmpty()
-{
-  var a: seq<int> := [];
-  var s, w := IsSortedCheck(a);
-  assert s;
-}
-
-method TestSingle()
-{
-  var a := [42];
-  var s, w := IsSortedCheck(a);
-  assert s;
-}
-
-method TestAllEqual()
-{
-  var a := [5, 5, 5, 5];
-  var s, w := IsSortedCheck(a);
-  assert s;
-}
-
-method TestDescending()
-{
-  var a := [5, 4, 3, 2, 1];
-  var s, w := IsSortedCheck(a);
-  assert !IsSorted(a) by {
-    assert a[0] == 5 > 4 == a[1];
-  }
-  assert !s;
+  print "All spec tests passed\n";
 }

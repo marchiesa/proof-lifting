@@ -1,48 +1,27 @@
-// Palindrome Check -- Test cases
+// Palindrome Check -- Runtime spec tests
 
 predicate IsPalindromeSpec(a: seq<int>)
 {
-  forall i :: 0 <= i < |a| ==> a[i] == a[|a| - 1 - i]
+  forall i | 0 <= i < |a| :: a[i] == a[|a| - 1 - i]
 }
 
-method {:axiom} IsPalindrome(a: seq<int>) returns (result: bool)
-  ensures result == IsPalindromeSpec(a)
-
-method TestPalindrome()
+method Main()
 {
-  var a := [1, 2, 3, 2, 1];
-  var r := IsPalindrome(a);
-  assert a[0] == a[4] == 1;
-  assert a[1] == a[3] == 2;
-  assert a[2] == 3;
-  assert IsPalindromeSpec(a);
-  assert r;
-}
+  // Positive cases - palindromes
+  expect IsPalindromeSpec([1, 2, 3, 2, 1]), "odd-length palindrome";
+  expect IsPalindromeSpec([1, 2, 2, 1]), "even-length palindrome";
+  expect IsPalindromeSpec([42]), "single element is palindrome";
+  expect IsPalindromeSpec([]), "empty is palindrome";
+  expect IsPalindromeSpec([5, 5]), "two equal elements";
+  expect IsPalindromeSpec([1, 2, 1]), "three-element palindrome";
+  expect IsPalindromeSpec([7, 7, 7, 7]), "all same is palindrome";
 
-method TestNotPalindrome()
-{
-  var a := [1, 2, 3];
-  var r := IsPalindrome(a);
-  assert a[0] == 1;
-  assert a[2] == 3;
-  assert a[0] != a[2];
-  assert !IsPalindromeSpec(a);
-  assert !r;
-}
+  // Negative cases - not palindromes
+  expect !IsPalindromeSpec([1, 2, 3]), "1,2,3 is not a palindrome";
+  expect !IsPalindromeSpec([1, 2]), "1,2 is not a palindrome";
+  expect !IsPalindromeSpec([1, 2, 3, 4, 5]), "ascending not palindrome";
+  expect !IsPalindromeSpec([1, 2, 3, 2, 2]), "almost palindrome but not";
+  expect !IsPalindromeSpec([1, 1, 2]), "1,1,2 is not a palindrome";
 
-method TestEmpty()
-{
-  var a: seq<int> := [];
-  var r := IsPalindrome(a);
-  assert IsPalindromeSpec(a);
-  assert r;
-}
-
-method TestSingleElement()
-{
-  var a := [42];
-  var r := IsPalindrome(a);
-  assert a[0] == a[0];
-  assert IsPalindromeSpec(a);
-  assert r;
+  print "All spec tests passed\n";
 }

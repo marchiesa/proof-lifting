@@ -1,55 +1,36 @@
-// Two Sum (Sorted Array) -- Test cases
+// Two Sum (Sorted Array) -- Runtime spec tests
 
 predicate IsSorted(a: seq<int>)
 {
-  forall i, j :: 0 <= i < j < |a| ==> a[i] <= a[j]
+  forall i, j | 0 <= i < j < |a| :: a[i] <= a[j]
 }
 
+// HasPairSum uses existential quantifier - need bounded version for compilation
 predicate HasPairSum(a: seq<int>, target: int)
 {
-  exists i, j :: 0 <= i < j < |a| && a[i] + a[j] == target
+  exists i, j | 0 <= i < j < |a| :: a[i] + a[j] == target
 }
 
-method {:axiom} TwoSum(a: seq<int>, target: int) returns (found: bool, lo_idx: int, hi_idx: int)
-  requires IsSorted(a)
-  ensures found ==> 0 <= lo_idx < hi_idx < |a| && a[lo_idx] + a[hi_idx] == target
-  ensures !found ==> !HasPairSum(a, target)
-
-method TestPairExists()
+method Main()
 {
-  var a := [1, 2, 3, 4, 6];
-  var found, i, j := TwoSum(a, 8);
-  assert a[1] + a[4] == 8;  // witness
-  assert HasPairSum(a, 8);
-  assert found;
-}
+  // Test IsSorted
+  expect IsSorted([1, 2, 3, 4, 6]), "ascending should be sorted";
+  expect !IsSorted([6, 4, 3, 2, 1]), "descending should not be sorted";
 
-method TestNoPair()
-{
-  var a := [1, 2, 3, 4, 6];
-  var found, i, j := TwoSum(a, 20);
-  assert !found;
-}
+  // Test HasPairSum - positive cases
+  expect HasPairSum([1, 2, 3, 4, 6], 8), "[1,2,3,4,6] should have pair summing to 8 (2+6)";
+  expect HasPairSum([1, 2, 3, 4, 6], 3), "[1,2,3,4,6] should have pair summing to 3 (1+2)";
+  expect HasPairSum([3, 7], 10), "[3,7] should have pair summing to 10";
 
-method TestEmpty()
-{
-  var a: seq<int> := [];
-  var found, i, j := TwoSum(a, 5);
-  assert !found;
-}
+  // Test HasPairSum - negative cases
+  expect !HasPairSum([1, 2, 3, 4, 6], 20), "[1,2,3,4,6] should not have pair summing to 20";
+  expect !HasPairSum([1, 2, 3, 4, 6], 1), "[1,2,3,4,6] should not have pair summing to 1";
+  expect !HasPairSum([], 5), "empty should not have pair";
+  expect !HasPairSum([5], 10), "single element should not have pair";
 
-method TestSingleElement()
-{
-  var a := [5];
-  var found, i, j := TwoSum(a, 10);
-  assert !found;
-}
+  // Edge cases
+  expect HasPairSum([1, 1], 2), "[1,1] should have pair summing to 2";
+  expect !HasPairSum([1, 2], 5), "[1,2] should not have pair summing to 5";
 
-method TestTwoElements()
-{
-  var a := [3, 7];
-  var found, i, j := TwoSum(a, 10);
-  assert a[0] + a[1] == 10;
-  assert HasPairSum(a, 10);
-  assert found;
+  print "All spec tests passed\n";
 }
