@@ -24,6 +24,7 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -122,6 +123,37 @@ def get_adapter(
     raise ValueError(f"Unhandled adapter: {canonical}")
 
 
+def run_spec_tests(problem_dir: str, real_dafny: str) -> tuple:
+    """
+    Run runtime spec tests for a problem.
+
+    Looks for ``tests.dfy`` in the problem directory and executes it with
+    ``dafny run``. Returns ``(passed: bool, output: str)``.
+    """
+    tests_file = os.path.join(problem_dir, "tests.dfy")
+    if not os.path.exists(tests_file):
+        return False, "tests.dfy not found"
+
+    # Build the dafny run command
+    dafny_parts = real_dafny.split()
+    cmd = dafny_parts + ["run", tests_file]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        output = result.stdout + result.stderr
+        passed = result.returncode == 0
+        return passed, output.strip()
+    except subprocess.TimeoutExpired:
+        return False, "Spec test timed out after 120s"
+    except Exception as e:
+        return False, f"Error running spec tests: {e}"
+
+
 def discover_problems(dataset_dir: str) -> List[dict]:
     """
     Discover all problems in the dataset directory.
@@ -169,6 +201,7 @@ def run_single_problem(
     max_iterations: int,
     real_dafny: str,
     output_dir: str,
+    skip_spec_tests: bool = False,
 ) -> dict:
     """
     Run a single problem through the LLM adapter.
@@ -235,15 +268,37 @@ def run_single_problem(
     elif result.max_iterations_reached:
         status = "MAX_ITER"
 
+    # Run spec tests if verification passed and not skipped
+    spec_test_passed = None
+    spec_test_output = None
+    if result.success and not skip_spec_tests:
+        tests_file = os.path.join(problem["dir"], "tests.dfy")
+        if os.path.exists(tests_file):
+            print("  Running spec tests...")
+            spec_test_passed, spec_test_output = run_spec_tests(
+                problem["dir"], real_dafny
+            )
+            if not spec_test_passed:
+                status = "SPEC_TEST_FAIL"
+                print(f"  Spec tests: FAILED")
+                print(f"  Spec test output: {spec_test_output}")
+            else:
+                print(f"  Spec tests: PASSED")
+
     print(f"\n  Result: {status}")
     print(f"  Iterations: {result.iterations}")
     print(f"  Time: {result.time_seconds:.1f}s")
     if result.error:
         print(f"  Error: {result.error}")
 
+    result_dict = result.to_dict()
+    if spec_test_passed is not None:
+        result_dict["spec_test_passed"] = spec_test_passed
+        result_dict["spec_test_output"] = spec_test_output
+
     return {
         "problem": problem_name,
-        "result": result.to_dict(),
+        "result": result_dict,
         "status": status,
     }
 
@@ -383,6 +438,12 @@ def main():
         metavar="N",
         help="Run problems in parallel with N workers (uses parallel_runner)",
     )
+    parser.add_argument(
+        "--skip-spec-tests",
+        action="store_true",
+        default=False,
+        help="Skip runtime spec tests after successful verification",
+    )
 
     args = parser.parse_args()
 
@@ -413,6 +474,7 @@ def main():
     output_dir_arg = args.output_dir or cfg.get("output_dir")
     parallel = args.parallel or cfg.get("parallel_workers")
     problem_names = args.problems or cfg.get("problems")
+    skip_spec_tests = args.skip_spec_tests or cfg.get("skip_spec_tests", False)
 
     if not dataset:
         parser.error("--dataset is required (or set problems_dir in config)")
@@ -524,6 +586,7 @@ def main():
             max_iterations=max_iters,
             real_dafny=real_dafny,
             output_dir=output_dir,
+            skip_spec_tests=skip_spec_tests,
         )
         all_results.append(result)
 
