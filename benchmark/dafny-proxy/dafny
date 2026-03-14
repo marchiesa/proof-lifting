@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+#
+# Dafny Benchmark Proxy
+#
+# This script replaces the real `dafny` binary on PATH. When an LLM calls
+# `dafny verify file.dfy`, this proxy:
+#
+#   1. Checks code integrity against the original task file
+#   2. Logs the attempt (timestamp, iteration, file contents, result)
+#   3. Forwards to the real dafny if integrity passes
+#   4. Returns a clear error if integrity fails
+#
+# Environment variables:
+#   BENCHMARK_TASK_FILE    - Path to the original, unmodified task .dfy file
+#   BENCHMARK_REAL_DAFNY   - Command to run real dafny (e.g., "dotnet /path/to/Dafny.dll")
+#   BENCHMARK_LOG_FILE     - Path to the log file for this problem run
+#   BENCHMARK_PROXY_DIR    - Directory containing this proxy and check_integrity.py
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ── Validate environment ─────────────────────────────────────────────────────
+
+if [[ -z "${BENCHMARK_TASK_FILE:-}" ]]; then
+    echo "ERROR: BENCHMARK_TASK_FILE not set" >&2
+    exit 1
+fi
+
+if [[ -z "${BENCHMARK_REAL_DAFNY:-}" ]]; then
+    echo "ERROR: BENCHMARK_REAL_DAFNY not set" >&2
+    exit 1
+fi
+
+LOG_FILE="${BENCHMARK_LOG_FILE:-/tmp/benchmark_dafny_proxy.log}"
+PROXY_DIR="${BENCHMARK_PROXY_DIR:-$SCRIPT_DIR}"
+
+# ── Parse arguments to find the .dfy file and the subcommand ─────────────────
+
+SUBCOMMAND=""
+DFY_FILE=""
+ALL_ARGS=("$@")
+EXTRA_ARGS=()
+FOUND_VERIFY=false
+
+for arg in "$@"; do
+    if [[ "$arg" == "verify" ]]; then
+        SUBCOMMAND="verify"
+        FOUND_VERIFY=true
+    elif [[ "$arg" == *.dfy ]] && $FOUND_VERIFY; then
+        DFY_FILE="$arg"
+    fi
+done
+
+# If this is not a `verify` command, just forward directly
+if [[ "$SUBCOMMAND" != "verify" ]]; then
+    exec $BENCHMARK_REAL_DAFNY "$@"
+fi
+
+# If no .dfy file found, forward as-is
+if [[ -z "$DFY_FILE" ]]; then
+    exec $BENCHMARK_REAL_DAFNY "$@"
+fi
+
+# Resolve to absolute path
+if [[ "$DFY_FILE" != /* ]]; then
+    DFY_FILE="$(pwd)/$DFY_FILE"
+fi
+
+# ── Track iteration count ────────────────────────────────────────────────────
+
+ITERATION_FILE="${LOG_FILE}.iteration"
+if [[ -f "$ITERATION_FILE" ]]; then
+    ITERATION=$(cat "$ITERATION_FILE")
+    ITERATION=$((ITERATION + 1))
+else
+    ITERATION=1
+fi
+echo "$ITERATION" > "$ITERATION_FILE"
+
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# ── Log attempt ──────────────────────────────────────────────────────────────
+
+{
+    echo "=========================================="
+    echo "ATTEMPT #${ITERATION}"
+    echo "TIMESTAMP: ${TIMESTAMP}"
+    echo "COMMAND: dafny $*"
+    echo "FILE: ${DFY_FILE}"
+    echo "------ SUBMITTED FILE CONTENTS ------"
+    cat "$DFY_FILE" 2>/dev/null || echo "(file not found)"
+    echo ""
+    echo "------ END FILE CONTENTS ------"
+} >> "$LOG_FILE"
+
+# ── Integrity check ─────────────────────────────────────────────────────────
+
+INTEGRITY_OUTPUT=$(python3 "$PROXY_DIR/check_integrity.py" "$BENCHMARK_TASK_FILE" "$DFY_FILE" 2>&1) && INTEGRITY_PASSED=true || INTEGRITY_PASSED=false
+
+{
+    echo "------ INTEGRITY CHECK ------"
+    echo "PASSED: ${INTEGRITY_PASSED}"
+    echo "$INTEGRITY_OUTPUT"
+    echo "------ END INTEGRITY CHECK ------"
+} >> "$LOG_FILE"
+
+if [[ "$INTEGRITY_PASSED" == "false" ]]; then
+    # Generate a diff for the error message
+    DIFF_OUTPUT=$(diff "$BENCHMARK_TASK_FILE" "$DFY_FILE" 2>/dev/null | head -80 || true)
+
+    ERROR_MSG="ERROR: You modified the code or specification. Only add loop invariants, assertions, lemmas, and ghost variables. The following changes were detected:
+
+${INTEGRITY_OUTPUT}
+
+Diff between original and submitted:
+${DIFF_OUTPUT}
+
+Please revert your changes to the code and specification, and only add proof annotations."
+
+    {
+        echo "------ RESULT ------"
+        echo "RESULT: INTEGRITY_FAILURE"
+        echo "=========================================="
+        echo ""
+    } >> "$LOG_FILE"
+
+    echo "$ERROR_MSG"
+    exit 1
+fi
+
+# ── Forward to real dafny ────────────────────────────────────────────────────
+
+REAL_OUTPUT=$($BENCHMARK_REAL_DAFNY "$@" 2>&1) && REAL_EXIT=0 || REAL_EXIT=$?
+
+{
+    echo "------ REAL DAFNY OUTPUT ------"
+    echo "$REAL_OUTPUT"
+    echo "EXIT CODE: $REAL_EXIT"
+    echo "------ RESULT ------"
+    if echo "$REAL_OUTPUT" | grep -q "0 errors"; then
+        echo "RESULT: VERIFICATION_SUCCESS"
+    else
+        echo "RESULT: VERIFICATION_FAILURE"
+    fi
+    echo "=========================================="
+    echo ""
+} >> "$LOG_FILE"
+
+echo "$REAL_OUTPUT"
+exit $REAL_EXIT
