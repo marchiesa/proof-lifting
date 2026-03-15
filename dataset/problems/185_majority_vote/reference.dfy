@@ -13,14 +13,38 @@ function CountTo(a: seq<int>, v: int, n: int): nat
   else (if a[n-1] == v then 1 else 0) + CountTo(a, v, n-1)
 }
 
+lemma CountToStep(a: seq<int>, v: int, n: int)
+  requires 0 < n <= |a|
+  ensures CountTo(a, v, n) == CountTo(a, v, n-1) + (if a[n-1] == v then 1 else 0)
+{
+  // Direct from definition
+}
+
 lemma CountToFull(a: seq<int>, v: int)
   ensures CountTo(a, v, |a|) == Count(a, v)
   decreases |a|
 {
-  if |a| > 0 {
-    // Connect CountTo and Count
-    assert a[1..] == a[1..];
+  if |a| == 0 {
+  } else {
     CountToFull(a[1..], v);
+    CountToSlice(a, v, |a|);
+  }
+}
+
+lemma CountToSlice(a: seq<int>, v: int, n: int)
+  requires 0 < n <= |a|
+  ensures CountTo(a, v, n) == (if a[0] == v then 1 else 0) + CountTo(a[1..], v, n - 1)
+  decreases n
+{
+  if n == 1 {
+    assert CountTo(a, v, 1) == (if a[0] == v then 1 else 0) + CountTo(a, v, 0);
+    assert CountTo(a[1..], v, 0) == 0;
+  } else {
+    CountToSlice(a, v, n - 1);
+    // CountTo(a, v, n) = (if a[n-1] == v then 1 else 0) + CountTo(a, v, n-1)
+    // By IH: CountTo(a, v, n-1) = (if a[0] == v then 1 else 0) + CountTo(a[1..], v, n-2)
+    // CountTo(a[1..], v, n-1) = (if a[1..][n-2] == v then 1 else 0) + CountTo(a[1..], v, n-2)
+    assert a[n-1] == a[1..][n-2];
   }
 }
 

@@ -25,6 +25,7 @@ method MinRefuelStops(target: int, startFuel: int, positions: seq<int>, fuels: s
     while t >= 0
       invariant -1 <= t <= i
       invariant |dp| == n + 1
+      invariant dp[0] >= 0
       decreases t + 1
     {
       if dp[t] >= positions[i] {

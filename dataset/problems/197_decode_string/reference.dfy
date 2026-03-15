@@ -26,7 +26,11 @@ method DecodeString(enc: seq<int>) returns (result: seq<int>)
     invariant i % 3 == 0
     decreases |enc| - i
   {
+    assert i / 3 < |enc| / 3;
+    assert enc[3 * (i / 3)] > 0;
+    assert i == 3 * (i / 3);
     var count := enc[i];
+    assert count > 0;
     var ch := enc[i + 1];
     var j := 0;
     while j < count

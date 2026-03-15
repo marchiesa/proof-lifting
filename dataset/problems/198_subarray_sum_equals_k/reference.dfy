@@ -8,6 +8,23 @@ function SumRange(a: seq<int>, lo: int, hi: int): int
   else a[lo] + SumRange(a, lo + 1, hi)
 }
 
+lemma SumRangeExtend(a: seq<int>, lo: int, hi: int)
+  requires 0 <= lo <= hi < |a|
+  ensures SumRange(a, lo, hi + 1) == SumRange(a, lo, hi) + a[hi]
+  decreases hi - lo
+{
+  if lo == hi {
+    // SumRange(a, lo, lo+1) == a[lo] + SumRange(a, lo+1, lo+1) == a[lo] + 0 == a[lo]
+    // SumRange(a, lo, lo) + a[lo] == 0 + a[lo] == a[lo]
+  } else {
+    // SumRange(a, lo, hi+1) == a[lo] + SumRange(a, lo+1, hi+1)
+    SumRangeExtend(a, lo + 1, hi);
+    // SumRange(a, lo+1, hi+1) == SumRange(a, lo+1, hi) + a[hi]
+    // So SumRange(a, lo, hi+1) == a[lo] + SumRange(a, lo+1, hi) + a[hi]
+    //                           == SumRange(a, lo, hi) + a[hi]
+  }
+}
+
 method SubarraySumK(a: seq<int>, k: int) returns (count: int)
   ensures count >= 0
 {
@@ -26,6 +43,7 @@ method SubarraySumK(a: seq<int>, k: int) returns (count: int)
       invariant count >= 0
       decreases |a| - j
     {
+      SumRangeExtend(a, i, j);
       sum := sum + a[j];
       if sum == k {
         count := count + 1;

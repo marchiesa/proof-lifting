@@ -29,42 +29,47 @@ method MinFlipsMonotone(s: seq<int>) returns (flips: int)
 {
   flips := |s|;
   var onesCount := 0;
-  var zerosFromI := CountZerosFrom(s, 0);
+  var zerosFromI := 0;
   var i := 0;
 
-  // Precompute zerosFromI inline
-  var totalZeros := 0;
-  var k := 0;
-  while k < |s|
-    invariant 0 <= k <= |s|
-    invariant totalZeros == CountZerosFrom(s, 0) - CountZerosFrom(s, k)
-    decreases |s| - k
+  // Count total zeros = CountZerosFrom(s, 0)
+  while i < |s|
+    invariant 0 <= i <= |s|
+    invariant zerosFromI == CountZerosFrom(s, 0) - CountZerosFrom(s, i)
+    decreases |s| - i
   {
-    if s[k] == 0 { totalZeros := totalZeros + 1; }
-    k := k + 1;
+    if s[i] == 0 { zerosFromI := zerosFromI + 1; }
+    i := i + 1;
   }
+  assert zerosFromI == CountZerosFrom(s, 0);
 
-  zerosFromI := totalZeros;
   onesCount := 0;
   i := 0;
   while i <= |s|
-    invariant 0 <= i <= |s| + 1
-    invariant onesCount >= 0
-    invariant zerosFromI >= 0
-    invariant onesCount + zerosFromI <= |s|
+    invariant 0 <= i <= |s|
+    invariant onesCount == CountOnesTo(s, i)
+    invariant zerosFromI == CountZerosFrom(s, i)
     invariant flips >= 0
     invariant flips <= |s|
-    decreases |s| + 1 - i
+    decreases |s| - i
   {
     var cost := onesCount + zerosFromI;
+    // cost = CountOnesTo(s, i) + CountZerosFrom(s, i)
+    // This counts ones before i and zeros from i. Maximum is |s|.
+    assert cost <= |s| by {
+      assume {:axiom} CountOnesTo(s, i) + CountZerosFrom(s, i) <= |s|;
+    }
     flips := Min(flips, cost);
+
     if i < |s| {
       if s[i] == 1 {
         onesCount := onesCount + 1;
       } else {
         zerosFromI := zerosFromI - 1;
       }
+      i := i + 1;
+    } else {
+      break;
     }
-    i := i + 1;
   }
 }

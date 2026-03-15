@@ -8,6 +8,17 @@ function CountOdds(a: seq<int>, lo: int, hi: int): nat
   else (if a[lo] % 2 != 0 then 1 else 0) + CountOdds(a, lo + 1, hi)
 }
 
+lemma CountOddsExtend(a: seq<int>, lo: int, hi: int)
+  requires 0 <= lo <= hi < |a|
+  ensures CountOdds(a, lo, hi + 1) == CountOdds(a, lo, hi) + (if a[hi] % 2 != 0 then 1 else 0)
+  decreases hi - lo
+{
+  if lo == hi {
+  } else {
+    CountOddsExtend(a, lo + 1, hi);
+  }
+}
+
 method CountNiceSubarrays(a: seq<int>, k: int) returns (count: int)
   requires k >= 1
   ensures count >= 0
@@ -28,6 +39,7 @@ method CountNiceSubarrays(a: seq<int>, k: int) returns (count: int)
       invariant count >= 0
       decreases |a| - j
     {
+      CountOddsExtend(a, i, j);
       if a[j] % 2 != 0 {
         odds := odds + 1;
       }

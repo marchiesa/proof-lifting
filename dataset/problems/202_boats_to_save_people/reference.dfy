@@ -25,8 +25,10 @@ method NumBoats(weights: seq<int>, limit: int) returns (boats: int)
     invariant 0 <= lo <= |weights|
     invariant -1 <= hi < |weights|
     invariant boats >= 0
-    invariant boats + (hi - lo + 1) <= |weights|
-    invariant lo + boats >= lo
+    invariant boats + (hi - lo + 1 + (if lo <= hi then 0 else 1)) <= |weights| + 1
+    invariant lo > 0 || hi < |weights| - 1 || boats == 0  // tracks progress
+    invariant boats + (if lo <= hi then hi - lo + 1 else 0) <= |weights|
+    invariant lo > hi ==> boats >= 1
     decreases hi - lo + 1
   {
     if lo < hi && weights[lo] + weights[hi] <= limit {

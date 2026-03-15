@@ -38,9 +38,14 @@ method Rearrange(a: seq<int>) returns (result: seq<int>)
     invariant 0 <= i <= |a|
     invariant forall j :: 0 <= j < |pos| ==> pos[j] > 0
     invariant forall j :: 0 <= j < |neg| ==> neg[j] < 0
+    invariant |pos| == CountPos(a[..i])
+    invariant |neg| == CountNeg(a[..i])
     invariant multiset(pos) + multiset(neg) == multiset(a[..i])
     decreases |a| - i
   {
+    assert a[..i+1] == a[..i] + [a[i]];
+    CountPosAppend(a[..i], a[i]);
+    CountNegAppend(a[..i], a[i]);
     if a[i] > 0 {
       pos := pos + [a[i]];
     } else {
@@ -50,8 +55,14 @@ method Rearrange(a: seq<int>) returns (result: seq<int>)
   }
   assert a[..i] == a;
 
+  // From CountPos(a) == CountNeg(a) and |pos| == CountPos(a), |neg| == CountNeg(a)
+  assert |pos| == |neg|;
+
   result := [];
   i := 0;
+  assert pos[..0] == [];
+  assert neg[..0] == [];
+
   while i < |pos|
     invariant 0 <= i <= |pos|
     invariant |result| == 2 * i
@@ -60,9 +71,48 @@ method Rearrange(a: seq<int>) returns (result: seq<int>)
     invariant multiset(result) == multiset(pos[..i]) + multiset(neg[..i])
     decreases |pos| - i
   {
+    var oldResult := result;
+    ghost var oldPosSlice := pos[..i];
+    ghost var oldNegSlice := neg[..i];
     result := result + [pos[i], neg[i]];
+
+    // Prove Alternating for extended result
+    assert |oldResult| == 2 * i;
+    assert result[2*i] == pos[i];
+    assert result[2*i + 1] == neg[i];
+    assert pos[i] > 0;
+    assert neg[i] < 0;
+    assert (2*i) % 2 == 0;
+    assert (2*i + 1) % 2 == 1;
+
+    // Prove multiset property
+    assert pos[..i+1] == pos[..i] + [pos[i]];
+    assert neg[..i+1] == neg[..i] + [neg[i]];
+
     i := i + 1;
   }
   assert pos[..i] == pos;
   assert neg[..i] == neg;
+}
+
+lemma CountPosAppend(s: seq<int>, v: int)
+  ensures CountPos(s + [v]) == CountPos(s) + (if v > 0 then 1 else 0)
+{
+  if |s| == 0 {
+    assert s + [v] == [v];
+  } else {
+    assert (s + [v])[1..] == s[1..] + [v];
+    CountPosAppend(s[1..], v);
+  }
+}
+
+lemma CountNegAppend(s: seq<int>, v: int)
+  ensures CountNeg(s + [v]) == CountNeg(s) + (if v < 0 then 1 else 0)
+{
+  if |s| == 0 {
+    assert s + [v] == [v];
+  } else {
+    assert (s + [v])[1..] == s[1..] + [v];
+    CountNegAppend(s[1..], v);
+  }
 }

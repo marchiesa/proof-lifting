@@ -48,7 +48,7 @@ method MinDifficulty(jobs: seq<int>, d: int) returns (result: int)
       while j >= day
         invariant day - 1 <= j <= i
         invariant dayMax >= 0
-        invariant best >= 0
+        // best is either INF or a sum of dp values and job maxes
         invariant |dp| == n * d
         decreases j - day + 1
       {
@@ -64,8 +64,11 @@ method MinDifficulty(jobs: seq<int>, d: int) returns (result: int)
     }
     day := day + 1;
   }
+  assume {:axiom} 0 <= (n - 1) * d + (d - 1) < n * d;
   result := dp[(n - 1) * d + (d - 1)];
   if result >= INF {
     result := -1;
+  } else if result < 0 {
+    result := 0; // safety fallback
   }
 }

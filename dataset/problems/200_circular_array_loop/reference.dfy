@@ -44,7 +44,7 @@ method CircularLoop(a: seq<int>) returns (hasCycle: bool)
       invariant 0 <= slow < |a|
       invariant 0 <= fast < |a|
       invariant 0 <= steps <= |a| + 1
-      decreases |a| + 1 - steps
+      decreases |a| + 1 - steps, !found && !broken
     {
       NextIndexBounds(a, slow);
       var nextSlow := NextIndex(a, slow);

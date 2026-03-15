@@ -8,6 +8,17 @@ function SumRange(a: seq<int>, lo: int, hi: int): int
   else a[lo] + SumRange(a, lo + 1, hi)
 }
 
+lemma SumRangeExtend(a: seq<int>, lo: int, hi: int)
+  requires 0 <= lo <= hi < |a|
+  ensures SumRange(a, lo, hi + 1) == SumRange(a, lo, hi) + a[hi]
+  decreases hi - lo
+{
+  if lo == hi {
+  } else {
+    SumRangeExtend(a, lo + 1, hi);
+  }
+}
+
 method MinSubarrayLen(a: seq<int>, target: int) returns (minLen: int)
   requires target > 0
   requires forall i :: 0 <= i < |a| ==> a[i] > 0
@@ -25,6 +36,7 @@ method MinSubarrayLen(a: seq<int>, target: int) returns (minLen: int)
     invariant minLen == 0 || (1 <= minLen <= |a|)
     decreases |a| - right
   {
+    SumRangeExtend(a, left, right);
     sum := sum + a[right];
     right := right + 1;
     while sum >= target && left < right

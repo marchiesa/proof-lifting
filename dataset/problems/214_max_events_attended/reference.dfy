@@ -54,6 +54,9 @@ method MaxEvents(starts: seq<int>, ends: seq<int>) returns (count: int)
     var found := false;
     while day <= sortedEnds[i] && !found
       invariant sortedStarts[i] <= day <= sortedEnds[i] + 1
+      invariant !found ==> count <= i
+      invariant found ==> count <= i + 1
+      invariant count >= 0
       decreases sortedEnds[i] - day + 1
     {
       if day !in usedDays {

@@ -44,6 +44,7 @@ method SplitArrayLargestSum(a: seq<int>, k: int) returns (result: int)
     invariant 0 <= i <= |a|
     invariant lo >= 0
     invariant hi >= 0
+    invariant lo <= hi
     decreases |a| - i
   {
     lo := Max(lo, a[i]);

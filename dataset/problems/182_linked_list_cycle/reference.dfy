@@ -20,15 +20,26 @@ method DetectCycle(next: seq<int>, start: int) returns (hasCycle: bool)
   while steps < |next|
     invariant 0 <= steps <= |next|
     invariant 0 <= slow < |next|
-    invariant 0 <= fast < |next| || fast == -1
+    invariant 0 <= fast < |next|
     invariant start != -1
     decreases |next| - steps
   {
-    if fast == -1 || next[fast] == -1 {
+    // Advance fast two steps
+    var f1 := next[fast];
+    if f1 == -1 {
       return false;
     }
-    slow := next[slow];
-    fast := next[next[fast]];
+    var f2 := next[f1];
+    if f2 == -1 {
+      return false;
+    }
+    // Advance slow one step
+    var s1 := next[slow];
+    if s1 == -1 {
+      return false;
+    }
+    slow := s1;
+    fast := f2;
     steps := steps + 1;
     if slow == fast {
       return true;

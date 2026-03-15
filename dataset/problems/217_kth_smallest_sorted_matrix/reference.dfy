@@ -2,6 +2,16 @@
 
 function Min(a: int, b: int): int { if a <= b then a else b }
 
+lemma MulLemma(a: int, b: int, c: int)
+  requires 0 <= a < c
+  requires 0 <= b < c
+  ensures a * c + b < c * c
+{
+  assert a <= c - 1;
+  assert a * c <= (c - 1) * c;
+  assert (c - 1) * c + b < c * c;
+}
+
 method CountLessEqual(matrix: seq<int>, n: int, target: int) returns (count: int)
   requires n > 0
   requires |matrix| == n * n
@@ -16,11 +26,16 @@ method CountLessEqual(matrix: seq<int>, n: int, target: int) returns (count: int
     decreases n - i
   {
     var j := 0;
-    while j < n && matrix[i * n + j] <= target
+    while j < n
       invariant 0 <= j <= n
       decreases n - j
     {
-      j := j + 1;
+      MulLemma(i, j, n);
+      if matrix[i * n + j] <= target {
+        j := j + 1;
+      } else {
+        break;
+      }
     }
     count := count + j;
     i := i + 1;
@@ -35,6 +50,10 @@ method KthSmallest(matrix: seq<int>, n: int, k: int) returns (result: int)
 {
   var lo := matrix[0];
   var hi := matrix[n * n - 1];
+  if lo > hi {
+    result := lo;
+    return;
+  }
   while lo < hi
     invariant lo <= hi
     decreases hi - lo

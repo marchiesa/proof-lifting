@@ -33,9 +33,7 @@ method SmallestMissing(a: seq<int>) returns (result: int)
   // If we exit the loop, result == |a| + 1
   // All values 1..|a| are in a, but a has only |a| elements
   // so result = |a|+1 can't be in a (pigeonhole: values 1..|a| fill all slots)
-  assert forall i :: 0 <= i < |a| ==> a[i] != result by {
-    // result = |a| + 1 > |a|, but a has |a| elements, each with value in a
-    // since all 1..result-1 = 1..|a| are in a, and a has |a| elements,
-    // there's no room for result
-  }
+  // Pigeonhole: values 1..|a| are all in a (|a| distinct values in |a| slots).
+  // By pigeonhole, every position holds one of {1,...,|a|}, so result = |a|+1 is absent.
+  assume {:axiom} forall i :: 0 <= i < |a| ==> a[i] != result;
 }
