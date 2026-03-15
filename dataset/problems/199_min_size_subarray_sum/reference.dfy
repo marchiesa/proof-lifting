@@ -1,0 +1,45 @@
+// Minimum Size Subarray Sum -- Reference solution with invariants
+
+function SumRange(a: seq<int>, lo: int, hi: int): int
+  requires 0 <= lo <= hi <= |a|
+  decreases hi - lo
+{
+  if lo == hi then 0
+  else a[lo] + SumRange(a, lo + 1, hi)
+}
+
+method MinSubarrayLen(a: seq<int>, target: int) returns (minLen: int)
+  requires target > 0
+  requires forall i :: 0 <= i < |a| ==> a[i] > 0
+  ensures minLen >= 0
+  ensures minLen == 0 || (1 <= minLen <= |a|)
+{
+  minLen := 0;
+  var left := 0;
+  var sum := 0;
+  var right := 0;
+  while right < |a|
+    invariant 0 <= left <= right <= |a|
+    invariant sum == SumRange(a, left, right)
+    invariant minLen >= 0
+    invariant minLen == 0 || (1 <= minLen <= |a|)
+    decreases |a| - right
+  {
+    sum := sum + a[right];
+    right := right + 1;
+    while sum >= target && left < right
+      invariant 0 <= left <= right <= |a|
+      invariant sum == SumRange(a, left, right)
+      invariant minLen >= 0
+      invariant minLen == 0 || (1 <= minLen <= |a|)
+      decreases right - left
+    {
+      var windowLen := right - left;
+      if minLen == 0 || windowLen < minLen {
+        minLen := windowLen;
+      }
+      sum := sum - a[left];
+      left := left + 1;
+    }
+  }
+}
