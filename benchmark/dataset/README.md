@@ -10,32 +10,44 @@ Each problem lives in a subdirectory under `problems/` named `<number>_<name>` (
 |------|-------------|
 | `task.dfy` | The Dafny program with specification but missing proof annotations. This is what the LLM receives. |
 | `reference.dfy` | A fully verified reference solution (with invariants, assertions, lemmas). Must verify with 0 errors. |
-| `tests.dfy` | Runtime spec tests that validate the specification predicates. Must compile and run with `dafny run`. |
+| `tests.dfy` | Runtime tests that validate both spec predicates and the implementation. Must compile and run with `dafny run`. |
 | `problem.md` | Human-readable description of the problem, hints, and expected difficulty. |
 | `metadata.json` | Machine-readable metadata with at least `difficulty` and `algorithm` fields. |
 
-## Runtime Spec Tests
+## Runtime Tests
 
-Every problem **must** include `tests.dfy` with runtime tests for the specification predicates. This ensures that the spec actually describes the intended behavior.
+Every problem **must** include `tests.dfy` with runtime tests for both the specification predicates and the implementation. This ensures that the spec describes the intended behavior and the implementation actually produces correct results.
 
 ### Requirements for `tests.dfy`
 
 1. Must contain a `Main` method
 2. Must use `expect` statements (not `assert`) for runtime-checkable tests
-3. Must **not** import or include `task.dfy` -- tests validate the spec in isolation
-4. Must include both positive and negative test cases
+3. Must include both positive and negative spec test cases
+4. Must include implementation tests that call the method and check outputs
 5. Spec predicates should be copied from `task.dfy` and made compilable (use bounded quantifiers)
+6. The implementation should be included from `reference.dfy` (or copied if `include` doesn't work)
 
 ### Example
 
 ```dafny
-// Runtime spec tests for IsSorted
+// Tests for IsSorted / SortArray
+
+// =============================================
+// Section 1: Spec predicate tests
+// =============================================
 
 predicate IsSorted(s: seq<int>) {
   forall i, j :: 0 <= i < j < |s| ==> s[i] <= s[j]
 }
 
+// =============================================
+// Section 2: Implementation tests
+// =============================================
+
+include "reference.dfy"
+
 method Main() {
+  // --- Test the spec ---
   // Positive cases
   expect IsSorted([]), "empty sequence is sorted";
   expect IsSorted([1]), "singleton is sorted";
@@ -45,7 +57,15 @@ method Main() {
   expect !IsSorted([3, 1]), "descending pair is not sorted";
   expect !IsSorted([1, 3, 2]), "out-of-order element means not sorted";
 
-  print "All spec tests passed\n";
+  // --- Test the implementation ---
+  var result := SortArray([3, 1, 2]);
+  expect result == [1, 2, 3], "implementation should sort correctly";
+  expect IsSorted(result), "implementation output should satisfy spec";
+
+  var empty := SortArray([]);
+  expect empty == [], "implementation should handle empty input";
+
+  print "All tests passed\n";
 }
 ```
 
@@ -81,7 +101,7 @@ The validator checks:
 - `reference.dfy` verifies completely (0 errors)
 - `tests.dfy` compiles and runs successfully
 - `tests.dfy` has a `Main` method and `expect` statements
-- `tests.dfy` does not import the method implementation
+- `tests.dfy` includes implementation tests (method calls with output checks)
 - `metadata.json` has required fields
 - Spec predicates are non-ghost (warning if ghost)
 
@@ -102,20 +122,20 @@ This creates `dataset/problems/131_binary_search/` with skeleton files for all r
 After generating, fill in the templates:
 1. Write the spec predicates and method in `task.dfy`
 2. Add proof annotations to `reference.dfy` so it verifies
-3. Write runtime spec tests in `tests.dfy`
+3. Write spec predicate tests AND implementation tests in `tests.dfy`
 4. Describe the problem in `problem.md`
 5. Validate with `python benchmark/validate_dataset.py`
 
 ## Running the Benchmark
 
-The benchmark runner automatically runs spec tests after successful verification:
+The benchmark runner automatically runs tests (spec + implementation) after successful verification:
 
 ```bash
-# Normal run (includes spec tests)
+# Normal run (includes tests)
 python benchmark/run_benchmark.py --dataset benchmark/dataset/problems --adapter claude_code
 
-# Skip spec tests
-python benchmark/run_benchmark.py --dataset benchmark/dataset/problems --adapter claude_code --skip-spec-tests
+# Skip tests
+python benchmark/run_benchmark.py --dataset benchmark/dataset/problems --adapter claude_code --skip-tests
 ```
 
-Problems that verify but fail spec tests are marked as `SPEC_TEST_FAIL` in the results.
+Problems that verify but fail tests are marked as `TEST_FAIL` in the results.

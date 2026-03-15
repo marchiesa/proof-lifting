@@ -67,27 +67,50 @@ method {method_name}(/* params */) returns (/* returns */)
 
 def create_tests_dfy(title: str, method_name: str) -> str:
     """Generate tests.dfy template."""
-    return f"""// {title} -- Runtime spec tests
-// These tests validate the specification predicates at runtime.
-// They should NOT import or depend on the method implementation.
+    return f"""// {title} -- Tests
+// These tests validate both the specification predicates and the implementation.
 // Use `dafny run tests.dfy` to execute.
 
-// TODO: Copy spec predicates from task.dfy here.
+// =============================================
+// Section 1: Spec predicate tests
+// =============================================
+// TODO: Copy spec predicates from task.dfy here (non-ghost, bounded quantifiers).
 // If the spec uses quantifiers, use bounded quantifiers for compilability.
 // For example, replace `forall i :: 0 <= i < |s| ==> ...`
 // with an equivalent compilable form.
 
+// predicate Spec{method_name}(/* params */)
+// {{
+//   // specification predicate
+// }}
+
+// =============================================
+// Section 2: Implementation tests
+// =============================================
+// Include the full implementation from reference.dfy so the method can be called.
+// If `include` does not work, copy the method into this file instead.
+
+include "reference.dfy"
+
 method Main() {{
+  // --- Test the spec ---
   // TODO: Test spec with positive cases
-  // expect SpecPredicate(input, expected_output), "description of positive test";
+  // expect Spec{method_name}(input, expected_output), "spec should accept correct answer";
 
   // TODO: Test spec with negative cases
-  // expect !SpecPredicate(input, wrong_output), "description of negative test";
+  // expect !Spec{method_name}(input, wrong_output), "spec should reject wrong answer";
 
   // TODO: Test edge cases
-  // expect SpecPredicate(empty_input, expected), "edge case description";
+  // expect Spec{method_name}(empty_input, expected), "edge case description";
 
-  print "All spec tests passed\\n";
+  // --- Test the implementation ---
+  // TODO: Call the method with concrete inputs and check outputs
+  // var result := {method_name}(input);
+  // expect result == expected, "implementation should return correct answer";
+  // Or if exact equality isn't possible:
+  // expect Spec{method_name}(input, result), "implementation output should satisfy spec";
+
+  print "All tests passed\\n";
 }}
 """
 
@@ -208,7 +231,7 @@ def main():
     print(f"\nNext steps:")
     print(f"  1. Edit task.dfy with the actual specification and algorithm")
     print(f"  2. Edit reference.dfy with the verified solution (add invariants)")
-    print(f"  3. Edit tests.dfy with runtime spec tests using expect statements")
+    print(f"  3. Edit tests.dfy with spec predicate tests AND implementation tests")
     print(f"  4. Edit problem.md with the problem description")
     print(f"  5. Run: python validate_dataset.py --dataset {base_dir} --problems {dir_name}")
 

@@ -141,20 +141,36 @@ def check_tests_has_expects(problem_dir: str) -> Tuple[bool, str]:
     return False, "No expect statements found (use expect instead of assert for runtime tests)"
 
 
-def check_tests_no_impl_import(problem_dir: str) -> Tuple[bool, str]:
-    """Check that tests.dfy does NOT import the method implementation."""
+def check_tests_has_impl_tests(problem_dir: str) -> Tuple[bool, str]:
+    """Check that tests.dfy includes implementation tests (calls the method and checks output)."""
     tests_file = os.path.join(problem_dir, "tests.dfy")
     if not os.path.exists(tests_file):
         return False, "tests.dfy not found"
 
     content = Path(tests_file).read_text()
-    # Check for import statements that reference task.dfy or the main module
-    if re.search(r'\bimport\b.*\btask\b', content, re.IGNORECASE):
-        return False, "tests.dfy imports from task (should test spec only)"
-    # Also check for include of task.dfy
-    if re.search(r'include\s+["\'].*task\.dfy["\']', content):
-        return False, "tests.dfy includes task.dfy (should test spec only)"
-    return True, "No implementation import detected"
+
+    # Look for signs of implementation testing:
+    # 1. include "reference.dfy" or the method being defined/copied
+    # 2. var result := MethodName(...) pattern (method call with assignment)
+    # 3. Comments indicating implementation test section
+
+    has_include_ref = bool(re.search(r'include\s+["\'].*reference\.dfy["\']', content))
+
+    # Look for method calls with var assignment: var x := MethodName(...)
+    has_method_call = bool(re.search(r'\bvar\b\s+\w+\s*:=\s*\w+\s*\(', content))
+
+    # Look for Section 2 marker comment
+    has_impl_section = bool(re.search(r'(?i)implementation\s+tests?', content))
+
+    if has_method_call:
+        details = []
+        if has_include_ref:
+            details.append("includes reference.dfy")
+        if has_impl_section:
+            details.append("has impl test section")
+        return True, f"Implementation tests found ({', '.join(details) if details else 'method calls detected'})"
+
+    return False, "No implementation tests found (should call the method and check output with expect)"
 
 
 def check_metadata_fields(problem_dir: str) -> Tuple[bool, str]:
@@ -200,7 +216,7 @@ CHECKS = [
     ("tests_run", check_tests_run, True),
     ("tests_has_main", check_tests_has_main, False),
     ("tests_has_expects", check_tests_has_expects, False),
-    ("tests_no_impl_import", check_tests_no_impl_import, False),
+    ("tests_has_impl_tests", check_tests_has_impl_tests, False),
     ("metadata_fields", check_metadata_fields, False),
     ("spec_non_ghost", check_spec_non_ghost, False),
 ]
