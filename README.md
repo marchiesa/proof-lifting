@@ -142,6 +142,65 @@ z3 smt_input.smt2
 
 Use `name_map.json` to decode SMT names to Boogie, then `ast_mapping.json` to decode Boogie to Dafny.
 
+### SMT Quirk Analysis Pipeline (`smt_analysis/`)
+
+Automated pipeline to discover and classify SMT solver quirks across the dataset.
+
+#### Dataset generation
+
+```bash
+# Generate 100 problems from Codeforces (rating ≤ 1600)
+python3 pipeline.py --start 0 --count 100 --workers 10 --max-rating 1600
+
+# Continuous generation
+bash generate_loop.sh [start_index] [batch_size] [workers]
+```
+
+#### Verification (add invariants/assertions to make `dafny verify` pass)
+
+```bash
+# Verify all unverified problems (5 workers)
+python3 smt_analysis/quirk_finder.py --all --verify-only --workers 5 --skip-verified
+```
+
+#### Lemma inlining (convert non-recursive lemmas to inline assertions)
+
+```bash
+# Dry run — show what would be inlined
+python3 smt_analysis/inline_lemmas.py --all --dry-run
+
+# Inline for all verified problems
+python3 smt_analysis/inline_lemmas.py --all --workers 5
+```
+
+Non-recursive lemmas are essentially packaged assertions. Inlining them makes
+ablation more granular — individual assertions can be tested instead of opaque
+lemma calls. The script re-verifies after inlining and only keeps changes that pass.
+
+#### Full analysis (annotate → ablate → diagnose → axiom proposal)
+
+```bash
+# Run analysis on all verified problems (skips verification step)
+python3 smt_analysis/quirk_finder.py --all --analyze-only --workers 5 --skip-analyzed
+
+# Run on specific problems
+python3 smt_analysis/quirk_finder.py --names 0006_1017_A --analyze-only
+```
+
+For each verified problem, the pipeline:
+1. **ANNOTATE** — translates SMT names to Dafny names via the mapping chain
+2. **ABLATE** — removes each assertion one at a time, finds essential ones
+3. **DIAGNOSE** — extracts SMT logs, analyzes trigger gaps, identifies the solver limitation
+4. **AXIOM** — proposes Boogie axioms and tests them by patching the BPL
+5. **REPORT** — writes structured `report.json` with all findings
+
+#### Axiom testing
+
+```bash
+# Test a proposed Boogie axiom against a failing BPL
+bash smt_analysis/helpers/test_axiom.sh <bpl_file> <axiom_file> [timeout]
+```
+
 ### CEGAR-style proof hint discovery
 
 When Z3 returns `unknown` (verification fails), the spurious model can be analyzed to discover missing proof hints:
