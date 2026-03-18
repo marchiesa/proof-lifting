@@ -1,0 +1,154 @@
+Repair run at 2026-03-16 01:10:08
+
+Done: 1 success, 0 failed out of 1
+
+============================================================
+0037_1150_A
+============================================================
+function SumProd(amounts: seq<nat>, prices: seq<int>, k: nat): int
+  requires |amounts| == |prices|
+  requires k <= |amounts|
+{
+  if k == 0 then 0
+  else SumProd(amounts, prices, k - 1) + amounts[k - 1] * prices[k - 1]
+}
+
+function TotalShares(amounts: seq<nat>, k: nat): nat
+  requires k <= |amounts|
+{
+  if k == 0 then 0
+  else TotalShares(amounts, k - 1) + amounts[k - 1]
+}
+
+predicate ValidStrategy(buys: seq<nat>, sells: seq<nat>, r: int, s: seq<int>, b: seq<int>)
+{
+  |buys| == |s| &&
+  |sells| == |b| &&
+  SumProd(buys, s, |buys|) <= r &&
+  TotalShares(sells, |sells|) <= TotalShares(buys, |buys|)
+}
+
+function FinalBourles(buys: seq<nat>, sells: seq<nat>, r: int, s: seq<int>, b: seq<int>): int
+  requires |buys| == |s|
+  requires |sells| == |b|
+{
+  r - SumProd(buys, s, |buys|) + SumProd(sells, b, |sells|)
+}
+
+predicate IsOptimal(result: int, r: int, s: seq<int>, b: seq<int>)
+{
+  (exists buyIdx: int, numBuy: int, sellIdx: int, numSell: int |
+    0 <= buyIdx < |s| && 0 <= numBuy <= r &&
+    0 <= sellIdx < |b| && 0 <= numSell <= r ::
+    numBuy * s[buyIdx] <= r &&
+    numSell <= numBuy &&
+    result == r - numBuy * s[buyIdx] + numSell * b[sellIdx])
+  &&
+  (forall buyIdx: int, numBuy: int, sellIdx: int, numSell: int |
+    0 <= buyIdx < |s| && 0 <= numBuy <= r &&
+    0 <= sellIdx < |b| && 0 <= numSell <= r ::
+    (numBuy * s[buyIdx] <= r && numSell <= numBuy) ==>
+    r - numBuy * s[buyIdx] + numSell * b[sellIdx] <= result)
+}
+
+method StockArbitraging(n: int, m: int, r: int, s: seq<int>, b: seq<int>) returns (maxBourles: int)
+  requires n == |s| >= 1
+  requires m == |b| >= 1
+  requires r >= 0
+  requires forall i | 0 <= i < |s| :: s[i] > 0
+  requires forall j | 0 <= j < |b| :: b[j] > 0
+  ensures IsOptimal(maxBourles, r, s, b)
+{
+  var minS := s[0];
+  var i := 1;
+  while i < |s|
+  {
+    if s[i] < minS {
+      minS := s[i];
+    }
+    i := i + 1;
+  }
+
+  var maxB := b[0];
+  i := 1;
+  while i < |b|
+  {
+    if b[i] > maxB {
+      maxB := b[i];
+    }
+    i := i + 1;
+  }
+
+  var profit := r % minS + (r / minS) * maxB;
+  if profit > r {
+    maxBourles := profit;
+  } else {
+    maxBourles := r;
+  }
+}
+
+method Main() {
+  // === SPEC POSITIVE TESTS ===
+  // Small inputs only (r <= 5, sequences length 1-2) to keep quantifier enumeration fast
+  expect IsOptimal(0, 0, [1], [1]), "spec positive 1: r=0 optimal=0";
+  expect IsOptimal(1, 1, [1], [1]), "spec positive 2: r=1 optimal=1";
+  expect IsOptimal(4, 2, [1], [2]), "spec positive 3: r=2 s=[1] b=[2] optimal=4";
+  expect IsOptimal(6, 3, [2], [5]), "spec positive 4: r=3 s=[2] b=[5] optimal=6";
+  expect IsOptimal(7, 5, [2], [3]), "spec positive 5: r=5 s=[2] b=[3] optimal=7";
+  expect IsOptimal(10, 4, [2, 3], [5, 1]), "spec positive 6: r=4 s=[2,3] b=[5,1] optimal=10";
+  expect IsOptimal(9, 3, [1, 2], [3, 1]), "spec positive 7: r=3 s=[1,2] b=[3,1] optimal=9";
+  expect IsOptimal(15, 5, [2, 1], [1, 3]), "spec positive 8: r=5 s=[2,1] b=[1,3] optimal=15";
+
+  // === SPEC NEGATIVE TESTS ===
+  // Wrong outputs (off by +1) — spec should reject because no strategy achieves these values
+  expect !IsOptimal(1, 0, [1], [1]), "spec negative 1: wrong=1 (correct=0)";
+  expect !IsOptimal(2, 1, [1], [1]), "spec negative 2: wrong=2 (correct=1)";
+  expect !IsOptimal(5, 2, [1], [2]), "spec negative 3: wrong=5 (correct=4)";
+  expect !IsOptimal(7, 3, [2], [5]), "spec negative 4: wrong=7 (correct=6)";
+  expect !IsOptimal(8, 5, [2], [3]), "spec negative 5: wrong=8 (correct=7)";
+  expect !IsOptimal(11, 4, [2, 3], [5, 1]), "spec negative 6: wrong=11 (correct=10)";
+  expect !IsOptimal(10, 3, [1, 2], [3, 1]), "spec negative 7: wrong=10 (correct=9)";
+  expect !IsOptimal(14, 5, [2, 1], [1, 3]), "spec negative 8: wrong=14 (correct=15)";
+
+  // === IMPLEMENTATION TESTS ===
+  var result: int;
+
+  result := StockArbitraging(3, 4, 11, [4, 2, 5], [4, 4, 5, 4]);
+  expect result == 26, "impl test 1 failed";
+
+  result := StockArbitraging(2, 2, 50, [5, 7], [4, 2]);
+  expect result == 50, "impl test 2 failed";
+
+  result := StockArbitraging(1, 1, 1, [1], [1]);
+  expect result == 1, "impl test 3 failed";
+
+  result := StockArbitraging(1, 1, 35, [5], [7]);
+  expect result == 49, "impl test 4 failed";
+
+  result := StockArbitraging(1, 1, 36, [5], [7]);
+  expect result == 50, "impl test 5 failed";
+
+  result := StockArbitraging(3, 5, 20, [1000, 4, 6], [1, 2, 7, 6, 5]);
+  expect result == 35, "impl test 6 failed";
+
+  result := StockArbitraging(5, 3, 20, [5, 4, 3, 2, 1], [6, 7, 1000]);
+  expect result == 20000, "impl test 7 failed";
+
+  result := StockArbitraging(30, 30, 987,
+    [413, 937, 166, 77, 749, 925, 792, 353, 773, 88, 218, 863, 71, 186, 753, 306, 952, 966, 236, 501, 84, 163, 767, 99, 887, 380, 435, 888, 589, 761],
+    [68, 501, 323, 916, 506, 952, 411, 813, 664, 49, 860, 151, 120, 543, 168, 944, 302, 521, 245, 517, 464, 734, 205, 235, 173, 893, 109, 655, 346, 837]);
+  expect result == 12440, "impl test 8 failed";
+
+  result := StockArbitraging(30, 22, 1000,
+    [999, 953, 947, 883, 859, 857, 775, 766, 723, 713, 696, 691, 659, 650, 597, 474, 472, 456, 455, 374, 367, 354, 347, 215, 111, 89, 76, 76, 59, 55],
+    [172, 188, 223, 247, 404, 445, 449, 489, 493, 554, 558, 587, 588, 627, 686, 714, 720, 744, 747, 786, 830, 953]);
+  expect result == 17164, "impl test 9 failed";
+
+  result := StockArbitraging(28, 29, 1000,
+    [555, 962, 781, 562, 856, 700, 628, 591, 797, 873, 950, 607, 526, 513, 552, 954, 768, 823, 863, 650, 984, 653, 741, 548, 676, 577, 625, 902],
+    [185, 39, 223, 383, 221, 84, 165, 492, 79, 53, 475, 410, 314, 489, 59, 138, 395, 346, 91, 258, 14, 354, 410, 25, 41, 394, 463, 432, 325]);
+  expect result == 1000, "impl test 10 failed";
+
+  print "All tests passed\n";
+}
+

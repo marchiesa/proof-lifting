@@ -1,0 +1,173 @@
+predicate IsPositiveAfterDiv(x: int, d: int)
+  requires d != 0
+{
+  (x > 0 && d > 0) || (x < 0 && d < 0)
+}
+
+function CountPositiveAfterDiv(a: seq<int>, d: int): int
+  requires d != 0
+  decreases |a|
+{
+  if |a| == 0 then 0
+  else CountPositiveAfterDiv(a[..|a|-1], d)
+       + (if IsPositiveAfterDiv(a[|a|-1], d) then 1 else 0)
+}
+
+function CeilHalf(n: int): int
+{
+  (n + 1) / 2
+}
+
+predicate BePositiveSpec(a: seq<int>, d: int)
+{
+  (d != 0 ==> (-1000 <= d <= 1000 && CountPositiveAfterDiv(a, d) >= CeilHalf(|a|)))
+  &&
+  (d == 0 ==> (forall d' | -1000 <= d' <= 1000 :: d' == 0 || CountPositiveAfterDiv(a, d') < CeilHalf(|a|)))
+}
+
+method BePositive(a: seq<int>) returns (d: int)
+  ensures d != 0 ==> -1000 <= d <= 1000
+                      && CountPositiveAfterDiv(a, d) >= CeilHalf(|a|)
+  ensures d == 0 ==> (forall d' | -1000 <= d' <= 1000 ::
+                        d' == 0 || CountPositiveAfterDiv(a, d') < CeilHalf(|a|))
+{
+  var n := |a|;
+  var pcount := 0;
+  var ncount := 0;
+  var zcount := 0;
+  var i := 0;
+  while i < n
+  {
+    if a[i] > 0 {
+      pcount := pcount + 1;
+    } else if a[i] < 0 {
+      ncount := ncount + 1;
+    } else {
+      zcount := zcount + 1;
+    }
+    i := i + 1;
+  }
+  var half := (n + 1) / 2;
+  if pcount >= half {
+    d := 1;
+  } else if ncount >= half {
+    d := -1;
+  } else {
+    d := 0;
+  }
+}
+
+method Main()
+{
+  // ========== SPEC POSITIVE TESTS ==========
+  // Small-input versions testing the top-level ensures predicate with correct outputs
+
+  // SP1: [1,1,-1] d=1 (scaled from test 1: majority positive)
+  expect BePositiveSpec([1, 1, -1], 1), "spec positive 1";
+
+  // SP2: [0,1,-1] d=0 (scaled from test 2: no d gives majority)
+  expect BePositiveSpec([0, 1, -1], 0), "spec positive 2";
+
+  // SP3: [0,0,1] d=0 (scaled from test 3: zeros dominate)
+  expect BePositiveSpec([0, 0, 1], 0), "spec positive 3";
+
+  // SP4: [1] d=1 (scaled from test 4: single positive)
+  expect BePositiveSpec([1], 1), "spec positive 4";
+
+  // SP5: [1,0] d=1 (test 5 as-is)
+  expect BePositiveSpec([1, 0], 1), "spec positive 5";
+
+  // SP6: [-1,-1,0] d=-1 (scaled from test 7: majority negative)
+  expect BePositiveSpec([-1, -1, 0], -1), "spec positive 6";
+
+  // SP7: [1,1,0] d=1 (scaled from test 8/10: majority positive)
+  expect BePositiveSpec([1, 1, 0], 1), "spec positive 7";
+
+  // ========== SPEC NEGATIVE TESTS ==========
+  // Small-input versions testing the spec rejects wrong outputs
+
+  // SN1: [0,1,-1] wrong d=1 (correct 0; count=1 < CeilHalf(3)=2)
+  expect !BePositiveSpec([0, 1, -1], 1), "spec negative 1";
+
+  // SN2: [0,0,1] wrong d=1 (correct 0; count=1 < CeilHalf(3)=2)
+  expect !BePositiveSpec([0, 0, 1], 1), "spec negative 2";
+
+  // SN3: [-1,-1,0] wrong d=0 (correct -1; d'=-1 gives count=2 >= 2, forall fails)
+  expect !BePositiveSpec([-1, -1, 0], 0), "spec negative 3";
+
+  // SN4: [-1,-1,1] wrong d=0 (correct -1; d'=-1 gives count=2 >= 2, forall fails)
+  expect !BePositiveSpec([-1, -1, 1], 0), "spec negative 4";
+
+  // SN5: [1] wrong d=0 (correct 1; d'=1 gives count=1 >= 1, forall fails)
+  expect !BePositiveSpec([1], 0), "spec negative 5";
+
+  // SN6: [0] wrong d=1 (count=0 < CeilHalf(1)=1)
+  expect !BePositiveSpec([0], 1), "spec negative 6";
+
+  // SN7: [-1,-1,0] wrong d=1 (correct -1; count=0 < CeilHalf(3)=2)
+  expect !BePositiveSpec([-1, -1, 0], 1), "spec negative 7";
+
+  // ========== IMPLEMENTATION TESTS ==========
+
+  var r1 := BePositive([10, 0, -7, 2, 6]);
+  expect r1 == 1, "impl test 1 failed";
+
+  var r2 := BePositive([0, 0, 1, -1, 0, 0, 2]);
+  expect r2 == 0, "impl test 2 failed";
+
+  var r3 := BePositive([0, 0, 0, 1, 1]);
+  expect r3 == 0, "impl test 3 failed";
+
+  var r4 := BePositive([777]);
+  expect r4 == 1, "impl test 4 failed";
+
+  var r5 := BePositive([1, 0]);
+  expect r5 == 1, "impl test 5 failed";
+
+  var r6 := BePositive([39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39]);
+  expect r6 == 1, "impl test 6 failed";
+
+  var r7 := BePositive([-322, -198, -448, -249, -935, 614, 67, -679, -616, 430, -71, 818, -595, -22, 559, -575, -710, 50, -542, -144, -977, 672, -826, -927, 457, 518, 603, -287, 689, -45, -770, 208, 360, -498, -884, -161, -831, -793, -991, -102, -706, 338, 298, -897, 236, 567, -22, 577, -77, -481, 376, -152, 861, 559, 190, -662, 432, -880, -839, 737, 857, -614, -670, -423, -320, -451, -733, -304, 822, -316, 52, 46, -438, -427, 601, -885, -644, 518, 830, -517, 719, 643, 216, 45, -15, 382, 411, -424, -649, 286, -265, -49, 704, 661, -2, -992, 67, -118, 299, -420]);
+  expect r7 == -1, "impl test 7 failed";
+
+  var r8 := BePositive([621, 862, 494, -906, 906, 359, 776, 0, 23, -868, 863, -872, 273, 182, 414, 675, 31, 555, 0, -423, 468, 517, 577, 892, 117, 664, 292, 11, 105, 589, 173, 455, 711, 358, 229, -666, 192, 758, 6, 858, 208, 628, 532, 21, 69, 319, 926, 988, 0, 0, 0, 229, 351, 708, 287, 949, 429, 895, 369, 0, 756, 486, 2, 525, 656, -906, 742, 284, 174, 510, 747, 227, 274, 103, 50, -832, 656, 627, 883, -603, 927, 989, 797, 463, 615, 798, 832, 535, 562, 517, 194, 697, 661, 176, 814, -62, 0, -886, 239, 221]);
+  expect r8 == 1, "impl test 8 failed";
+
+  var r9 := BePositive([-62, 0, 94, -49, 84, -11, -88, 0, -88, 94]);
+  expect r9 == -1, "impl test 9 failed";
+
+  var r10 := BePositive([74, 33, 43, 41, -83, -30, 0, -20, 84, 99, 83, 0, 64, 0, 57, 46, 0, 18, 94, 82]);
+  expect r10 == 1, "impl test 10 failed";
+
+  var r11 := BePositive([-892, 0, -413, 742, 0, 0, 754, 23, -515, -293, 0, 918, -711, -362, -15, -776, -442, -902, 116, 732]);
+  expect r11 == -1, "impl test 11 failed";
+
+  var r12 := BePositive([355, -184, -982, -685, 581, 139, 249, -352, -856, -436, 679, 397, 653, 325, -639, -722, 769, 345, -207, -632]);
+  expect r12 == 1, "impl test 12 failed";
+
+  var r13 := BePositive([40, -84, 25, 0, 21, 44, 96, 2, -49, -15, -58, 58, 0, -49, 4, 8, 13, 28, -78, 69, 0, 35, 43, 0, 41, 97, 99, 0, 0, 5, 71, 58, 10, 15, 0, 30, 49, 0, -66, 15, 64, -51, 0, 50, 0, 23, 43, -43, 15, 6]);
+  expect r13 == 1, "impl test 13 failed";
+
+  var r14 := BePositive([-657, 0, -595, -527, -354, 718, 919, -770, -775, 943, -23, 0, -428, -322, -68, -429, -784, -981, -294, -260, 533, 0, 0, -96, -839, 0, -981, 187, 248, -56, -557, 0, 510, -824, -850, -531, -92, 386, 0, -952, 519, -417, 811, 0, -934, -495, -813, -810, -733, 0]);
+  expect r14 == -1, "impl test 14 failed";
+
+  var r15 := BePositive([-321, -535, -516, -822, -622, 102, 145, -607, 338, -849, -499, 892, -23, -120, 40, -864, -452, -641, -902, 41, 745, -291, 887, -175, -288, -69, -590, 370, -421, 195, 904, 558, 886, 89, -764, -378, 276, -21, -531, 668, 872, 88, -32, -558, 230, 181, -639, 364, -940, 177]);
+  expect r15 == -1, "impl test 15 failed";
+
+  var r16 := BePositive([-335, 775, 108, -928, -539, 408, 390, 500, 867, 951, 301, -113, -711, 827, -83, 422, -465, -355, -891, -957, -261, -507, 930, 385, 745, 198, 238, 33, 805, -956, 154, 627, 812, -518, 216, 785, 817, -965, -916, 999, 986, 718, 55, 698, -864, 512, 322, 442, 188, 771]);
+  expect r16 == 1, "impl test 16 failed";
+
+  var r17 := BePositive([-306, -646, -572, -364, -706, 796, 900, -715, -808, -746, -49, -320, 983, -414, -996, 659, -439, -280, -913, 126, -229, 427, -493, -316, -831, -292, -942, 707, -685, -82, 654, 490, -313, -660, -960, 971, 383, 430, -145, -689, -757, -811, 656, -419, 244, 203, -605, -287, 44, -583]);
+  expect r17 == -1, "impl test 17 failed";
+
+  var r18 := BePositive([41, 95, -57, 5, -37, -58, 61, 0, 59, 42, 45, 64, 35, 84, 11, 53, 5, -73, 99, 0, 59, 68, 82, 32, 50, 0, 92, 0, 17, 0, -2, 82, 86, -63, 96, -7, 0, 0, -6, -86, 96, 88, 81, 82, 0, 41, 9, 0, 67, 88, 80, 84, 78, 0, 16, 66, 0, 17, 56, 46, 82, 0, 11, -79, 53, 0, -94, 73, 12, 93, 30, 75, 89, 0, 56, 90, 79, -39, 45, -18, 38, 52, 82, 8, -30, 0, 69, 50, 22, 0, 41, 0, 0, 33, 17, 8, 97, 79, 30, 59]);
+  expect r18 == 1, "impl test 18 failed";
+
+  var r19 := BePositive([0, -927, -527, -306, -667, -229, -489, -194, -701, 0, 180, -723, 0, 3, -857, -918, -217, -471, 732, -712, 329, -40, 0, 0, -86, -820, -149, 636, -260, -974, 0, 732, 764, -769, 916, -489, -916, -747, 0, -508, -940, -229, -244, -761, 0, -425, 122, 101, -813, -67, 0, 0, 0, 707, -272, -435, 0, -736, 228, 586, 826, -795, 539, -553, -863, -744, -826, 355, 0, -6, -824, 0, 0, -588, -812, 0, -109, -408, -153, -799, 0, -15, -602, 0, -874, -681, 440, 579, -577, 0, -545, 836, -810, -147, 594, 124, 337, -477, -749, -313]);
+  expect r19 == -1, "impl test 19 failed";
+
+  var r20 := BePositive([-218, 113, -746, -267, 498, 408, 116, 756, -793, 0, -335, -213, 593, -467, 807, -342, -944, 13, 637, -82, -16, 860, -333, -94, 409, -149, -79, -431, -321, 974, 148, 779, -860, -992, -598, 0, -300, 285, -187, 404, -468, 0, -586, 875, 0, 0, -26, 366, 221, -759, -194, -353, -973, -968, -539, 0, 925, -223, -471, 237, 208, 0, 420, 688, 640, -711, 964, 661, 708, -158, 54, 864, 0, -697, -40, -313, -194, 220, -211, 108, 596, 534, 148, -137, 939, 106, -730, -800, -266, 433, 421, -135, 76, -51, -318, 0, 631, 591, 46, 669]);
+  expect r20 == 0, "impl test 20 failed";
+
+  print "All tests passed\n";
+}

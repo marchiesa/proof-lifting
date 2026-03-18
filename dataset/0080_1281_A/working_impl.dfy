@@ -1,0 +1,306 @@
+method SuffixThree(sentences: seq<string>) returns (results: seq<string>)
+{
+  results := [];
+  for i := 0 to |sentences| {
+    var s := sentences[i];
+    var last := s[|s| - 1];
+    if last == 'o' {
+      results := results + ["FILIPINO"];
+    } else if last == 'u' {
+      results := results + ["JAPANESE"];
+    } else {
+      results := results + ["KOREAN"];
+    }
+  }
+}
+
+method Main()
+{
+  // Test 1
+  var r1 := SuffixThree([
+    "kamusta_po",
+    "genki_desu",
+    "ohayou_gozaimasu",
+    "annyeong_hashimnida",
+    "hajime_no_ippo",
+    "bensamu_no_sentou_houhou_ga_okama_kenpo",
+    "ang_halaman_doon_ay_sarisari_singkamasu",
+    "si_roy_mustang_ay_namamasu"
+  ]);
+  expect r1 == [
+    "FILIPINO",
+    "JAPANESE",
+    "JAPANESE",
+    "KOREAN",
+    "FILIPINO",
+    "FILIPINO",
+    "JAPANESE",
+    "JAPANESE"
+  ], "Test 1 failed";
+
+  // Test 2
+  var r2 := SuffixThree([
+    "opo",
+    "p_po",
+    "popo",
+    "desu",
+    "po",
+    "udesu",
+    "podesu",
+    "desupo",
+    "sddesu",
+    "mumasu",
+    "mmnida",
+    "mmasu",
+    "masu",
+    "desu_po",
+    "pomnida",
+    "masumasu",
+    "pppo",
+    "mnida",
+    "masu_po",
+    "desu_masu",
+    "a_masu",
+    "po_po",
+    "masupo",
+    "masu_masu",
+    "mnidamasu",
+    "pomasu",
+    "mnida_po",
+    "mnida_desu",
+    "nakupo",
+    "po_masu"
+  ]);
+  expect r2 == [
+    "FILIPINO",
+    "FILIPINO",
+    "FILIPINO",
+    "JAPANESE",
+    "FILIPINO",
+    "JAPANESE",
+    "JAPANESE",
+    "FILIPINO",
+    "JAPANESE",
+    "JAPANESE",
+    "KOREAN",
+    "JAPANESE",
+    "JAPANESE",
+    "FILIPINO",
+    "KOREAN",
+    "JAPANESE",
+    "FILIPINO",
+    "KOREAN",
+    "FILIPINO",
+    "JAPANESE",
+    "JAPANESE",
+    "FILIPINO",
+    "FILIPINO",
+    "JAPANESE",
+    "JAPANESE",
+    "JAPANESE",
+    "FILIPINO",
+    "JAPANESE",
+    "FILIPINO",
+    "JAPANESE"
+  ], "Test 2 failed";
+
+  // Test 3
+  var r3 := SuffixThree([
+    "po",
+    "ppo",
+    "op_po",
+    "mnida",
+    "masu",
+    "desu",
+    "popo",
+    "msmasu",
+    "pomasu",
+    "po_po",
+    "usedpo",
+    "masu_po",
+    "opmasu",
+    "opo",
+    "ua_masu",
+    "op_masu",
+    "mnidapo",
+    "dmnida",
+    "opdesu",
+    "adinmpo",
+    "podesu",
+    "nakupo",
+    "oppo",
+    "mmasu",
+    "p_po",
+    "adinm_po",
+    "used_po",
+    "usedmasu",
+    "m_umasu",
+    "o_ppo"
+  ]);
+  expect r3 == [
+    "FILIPINO",
+    "FILIPINO",
+    "FILIPINO",
+    "KOREAN",
+    "JAPANESE",
+    "JAPANESE",
+    "FILIPINO",
+    "JAPANESE",
+    "JAPANESE",
+    "FILIPINO",
+    "FILIPINO",
+    "FILIPINO",
+    "JAPANESE",
+    "FILIPINO",
+    "JAPANESE",
+    "JAPANESE",
+    "FILIPINO",
+    "KOREAN",
+    "JAPANESE",
+    "FILIPINO",
+    "JAPANESE",
+    "FILIPINO",
+    "FILIPINO",
+    "JAPANESE",
+    "FILIPINO",
+    "FILIPINO",
+    "FILIPINO",
+    "JAPANESE",
+    "JAPANESE",
+    "FILIPINO"
+  ], "Test 3 failed";
+
+  // Test 4
+  var r4 := SuffixThree([
+    "imamnida",
+    "usamdesu",
+    "pomnida",
+    "desudesu",
+    "op_desu",
+    "desumnida",
+    "po_desu",
+    "po_mnida",
+    "a_mnida",
+    "desu_po",
+    "mnidamasu",
+    "masupo",
+    "desumasu",
+    "udesu",
+    "desupo",
+    "e_desu",
+    "po_masu",
+    "uudesu",
+    "usedmnida",
+    "usampo",
+    "masu_masu",
+    "mnida_masu",
+    "kamusta_po",
+    "masudesu",
+    "u_masu",
+    "ds_desu",
+    "u_edesu",
+    "desu_masu",
+    "masumasu",
+    "masu_mnida"
+  ]);
+  expect r4 == [
+    "KOREAN",
+    "JAPANESE",
+    "KOREAN",
+    "JAPANESE",
+    "JAPANESE",
+    "KOREAN",
+    "JAPANESE",
+    "KOREAN",
+    "KOREAN",
+    "FILIPINO",
+    "JAPANESE",
+    "FILIPINO",
+    "JAPANESE",
+    "JAPANESE",
+    "FILIPINO",
+    "JAPANESE",
+    "JAPANESE",
+    "JAPANESE",
+    "KOREAN",
+    "FILIPINO",
+    "JAPANESE",
+    "JAPANESE",
+    "FILIPINO",
+    "JAPANESE",
+    "JAPANESE",
+    "JAPANESE",
+    "JAPANESE",
+    "JAPANESE",
+    "JAPANESE",
+    "KOREAN"
+  ], "Test 4 failed";
+
+  // Test 5
+  var r5 := SuffixThree([
+    "mnidamnida",
+    "opmnida",
+    "adinm_masu",
+    "usam_masu",
+    "useddesu",
+    "adinmmasu",
+    "mnida_po",
+    "dnmnida",
+    "masumnida",
+    "usam_po",
+    "mnidadesu",
+    "used_masu",
+    "mnida_mnida",
+    "adinm_mnida",
+    "usammasu",
+    "masu_desu",
+    "usammnida",
+    "genki_desu",
+    "mm_mnida",
+    "adinmmnida",
+    "op_mnida",
+    "adinm_desu",
+    "used_desu",
+    "usam_desu",
+    "adinmdesu",
+    "saranghamnida",
+    "desu_desu",
+    "tang_na_moo_po",
+    "used_mnida",
+    "usam_mnida"
+  ]);
+  expect r5 == [
+    "KOREAN",
+    "KOREAN",
+    "JAPANESE",
+    "JAPANESE",
+    "JAPANESE",
+    "JAPANESE",
+    "FILIPINO",
+    "KOREAN",
+    "KOREAN",
+    "FILIPINO",
+    "JAPANESE",
+    "JAPANESE",
+    "KOREAN",
+    "KOREAN",
+    "JAPANESE",
+    "JAPANESE",
+    "KOREAN",
+    "JAPANESE",
+    "KOREAN",
+    "KOREAN",
+    "KOREAN",
+    "JAPANESE",
+    "JAPANESE",
+    "JAPANESE",
+    "JAPANESE",
+    "KOREAN",
+    "JAPANESE",
+    "FILIPINO",
+    "KOREAN",
+    "KOREAN"
+  ], "Test 5 failed";
+
+  print "All tests passed\n";
+}
