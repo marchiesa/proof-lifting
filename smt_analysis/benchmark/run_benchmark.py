@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 LLM benchmark: can the model recover stripped essential assertions?
 

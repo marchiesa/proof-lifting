@@ -28,6 +28,7 @@ NAMES="${1:-0000_1013_A 0009_1041_A 0012_1060_A}"
 
 set -e
 module load cuda/12.3
+module load python/3.11.7
 
 export DAFNY="$DAFNY"
 export Z3_PATH="$Z3"
