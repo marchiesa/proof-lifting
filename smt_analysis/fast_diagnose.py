@@ -223,7 +223,10 @@ def run_ablation(problem_dir: Path, assertions: list[dict], source_file: Path,
                   timeout: int = 30) -> list[dict]:
     """Run ablation on all assertions. Returns updated assertion list with essentiality."""
     ablation_dir = problem_dir / "ablation"
-    ablation_dir.mkdir(exist_ok=True)
+    if ablation_dir.exists():
+        import shutil
+        shutil.rmtree(ablation_dir)
+    ablation_dir.mkdir()
 
     verified = source_file
 
