@@ -289,21 +289,72 @@ ensures the LLM doesn't cheat by modifying the code or formal spec.
 DOTNET8=/path/to/dotnet8 python3 smt_analysis/benchmark/prepare.py
 ```
 
-### Deploy to Leonardo
+### Leonardo cluster setup
+
+The benchmarks run on [CINECA Leonardo](https://www.hpc.cineca.it/systems/hardware/leonardo/)
+(A100 GPUs, SLURM scheduler). One-time setup:
 
 ```bash
-bash smt_analysis/benchmark/deploy.sh
+# SSH to login node
+ssh login.leonardo.cineca.it   # requires TOTP authenticator
+
+# Paths on Leonardo (account EUHPC_D29_022)
+export WORK=/leonardo_work/EUHPC_D29_022/mchiesa0
+
+# Software already installed:
+# - SGLang:        $WORK/software/sglang_env/          (venv with SGLang)
+# - llama.cpp:     $WORK/software/llama.cpp/build/bin/  (compiled)
+# - Modified Dafny: $WORK/software/dafny-modified/      (our fork with --ast-mapping)
+# - Stock Dafny:   $WORK/software/dafny/                (v4.11.0, self-contained)
+# - .NET 8:        $WORK/software/dotnet8/              (for running modified Dafny)
+# - Z3:            $WORK/software/z3/bin/z3
+# - Model (HF):    $WORK/models/gpt-oss-20b-hf/        (for SGLang)
+# - Model (GGUF):  $WORK/models/gpt-oss-20b-mxfp4.gguf (for llama.cpp)
+
+# Install modified Dafny (if not done):
+# Upload from local: tar czf /tmp/dafny-modified.tar.gz -C dafny-source Binaries/
+# scp to Leonardo, extract to $WORK/software/dafny-modified/
+
+# Install .NET 8 runtime (if not done):
+curl -sSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 8.0 --runtime dotnet --install-dir $WORK/software/dotnet8
 ```
 
-### Run on Leonardo
+### Deploy and run
 
 ```bash
-# Quick test (llama.cpp, 1 GPU, 3 problems)
+# From your local machine:
+bash smt_analysis/benchmark/deploy.sh
+
+# On Leonardo:
+
+# --- Full rewrite experiment (LLM rewrites entire program) ---
+# SGLang, 4 GPUs (TP=4), 8 concurrent problems, ~1 hour
+sbatch $WORK/benchmark/launch_sglang.sh
+
+# Quick test with llama.cpp (1 GPU, specify problems)
 sbatch $WORK/benchmark/launch_llama.sh "0024_1091_A 0068_1196_A 0012_1060_A"
 
-# Full run (SGLang, 4 GPUs, all 40 problems)
-sbatch $WORK/benchmark/launch_sglang.sh
+# --- Placeholder experiment (LLM fills assertion slots) ---
+# SGLang, 4 GPUs, 8 concurrent problems, ~1 hour
+sbatch $WORK/benchmark/launch_placeholder_sglang.sh
+
+# --- Monitor ---
+squeue -u mchiesa0                                            # job status
+tail -f $WORK/logs/quirk-bench_<JOBID>.out                    # live output
+sacct -j <JOBID> --format=JobID,State,Elapsed,ExitCode        # after completion
 ```
+
+### SLURM configuration
+
+All launch scripts use:
+- **Partition:** `boost_usr_prod` (GPU nodes with 4x A100-64GB)
+- **Account:** `EUHPC_D29_022`
+- **GPUs:** 4 (SGLang with tensor parallelism) or 1 (llama.cpp)
+- **Time limit:** 2 hours
+- **Context length:** 16384 tokens (SGLang)
+
+SGLang takes ~10 min to start (model loading + CUDA graph capture).
+llama.cpp starts in ~40s.
 
 ### Integrity checks
 
@@ -337,10 +388,7 @@ assertions (as a JSON array). This tests "can the LLM guess WHAT is needed,
 given WHERE it's needed?" — no code modification risk, per-assertion accuracy.
 
 ```bash
-# Deploy (same inputs, different script)
-scp smt_analysis/benchmark/run_placeholder.py $REMOTE:$BENCHMARK_DIR/
-
-# Run on Leonardo (SGLang, 4 GPUs)
+# Included in deploy.sh — same inputs, different benchmark script
 sbatch $WORK/benchmark/launch_placeholder_sglang.sh
 ```
 
