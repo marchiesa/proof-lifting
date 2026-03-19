@@ -55,61 +55,22 @@ VERIFY_TIMEOUT = 60  # seconds per dafny verify call
 
 def call_sglang(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
                 temperature: float = 0.7) -> dict:
-    """Call SGLang /generate endpoint. Returns {text, tokens, time, raw}."""
+    """Call SGLang /v1/chat/completions endpoint. Returns {text, tokens, time, raw}."""
     import urllib.request
 
     payload = json.dumps({
-        "text": prompt,
-        "sampling_params": {
-            "max_new_tokens": max_tokens,
-            "temperature": temperature,
-            "stop": ["</DAFNY_CODE>"],
-        },
-    }).encode("utf-8")
-
-    req = urllib.request.Request(
-        f"{url}/generate",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-    )
-
-    t0 = time.perf_counter()
-    try:
-        with urllib.request.urlopen(req, timeout=600) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-    except Exception as e:
-        return {"text": "", "tokens": 0, "time": 0, "error": str(e)}
-
-    elapsed = time.perf_counter() - t0
-    text = result.get("text", "")
-    meta = result.get("meta_info", {})
-    tokens = meta.get("completion_tokens", 0)
-    prompt_tokens = meta.get("prompt_tokens", 0)
-
-    return {
-        "text": text,
-        "tokens": tokens,
-        "prompt_tokens": prompt_tokens,
-        "time": round(elapsed, 2),
-        "raw": result,
-    }
-
-
-def call_llama(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
-               temperature: float = 0.7) -> dict:
-    """Call llama.cpp /v1/completions endpoint (streaming). Returns {text, tokens, time}."""
-    import urllib.request
-
-    payload = json.dumps({
-        "prompt": prompt,
-        "stream": False,
-        "n_predict": max_tokens,
+        "model": "gpt-oss",
+        "messages": [
+            {"role": "system", "content": "You are a Dafny verification expert. Output only code, no explanations."},
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": max_tokens,
         "temperature": temperature,
         "stop": ["</DAFNY_CODE>"],
     }).encode("utf-8")
 
     req = urllib.request.Request(
-        f"{url}/v1/completions",
+        f"{url}/v1/chat/completions",
         data=payload,
         headers={"Content-Type": "application/json"},
     )
@@ -124,7 +85,51 @@ def call_llama(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
     elapsed = time.perf_counter() - t0
 
     choices = result.get("choices", [])
-    text = choices[0].get("text", "") if choices else ""
+    text = choices[0].get("message", {}).get("content", "") if choices else ""
+    usage = result.get("usage", {})
+
+    return {
+        "text": text,
+        "tokens": usage.get("completion_tokens", 0),
+        "prompt_tokens": usage.get("prompt_tokens", 0),
+        "time": round(elapsed, 2),
+        "raw": result,
+    }
+
+
+def call_llama(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
+               temperature: float = 0.7) -> dict:
+    """Call llama.cpp /v1/chat/completions endpoint. Returns {text, tokens, time}."""
+    import urllib.request
+
+    payload = json.dumps({
+        "model": "gpt-oss",
+        "messages": [
+            {"role": "system", "content": "You are a Dafny verification expert. Output only code, no explanations."},
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "stop": ["</DAFNY_CODE>"],
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        f"{url}/v1/chat/completions",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+
+    t0 = time.perf_counter()
+    try:
+        with urllib.request.urlopen(req, timeout=600) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        return {"text": "", "tokens": 0, "time": 0, "error": str(e)}
+
+    elapsed = time.perf_counter() - t0
+
+    choices = result.get("choices", [])
+    text = choices[0].get("message", {}).get("content", "") if choices else ""
     usage = result.get("usage", {})
 
     return {
@@ -328,9 +333,14 @@ def build_prompt(stripped_code: str, dafny_error: str | None = None,
                  attempt: int = 1) -> str:
     """Build prompt for the LLM."""
     if attempt == 1 or dafny_error is None:
-        return f"""The following Dafny program has a correct implementation and specification (preconditions, postconditions, loop invariants), but verification fails because some assertions are missing. The program verified successfully before these assertions were removed.
+        return f"""The following Dafny program has a correct implementation and specification, but verification fails because some `assert` statements are missing. The program verified successfully before these assertions were removed.
 
-Add the minimum number of `assert` statements needed to make `dafny verify` pass. Do NOT modify the existing code, invariants, or specifications — only add new assert statements.
+RULES — read carefully:
+1. Add `assert` statements to make `dafny verify` pass.
+2. You may add helper lemmas or ghost functions if needed.
+3. You MUST NOT modify ANY existing code. Do not change variable names, assignments, control flow, loop bodies, if/else branches, return statements, or any expression.
+4. You MUST NOT modify ANY formal specification. Do not change requires, ensures, invariant, decreases, function bodies, or predicate bodies.
+5. Any modification to existing code or specifications will be automatically detected and rejected. We compare the AST of your output against the original — only added assert statements and new lemma/function definitions are permitted.
 
 Return the complete Dafny program with your added assertions inside <DAFNY_CODE> tags.
 
@@ -341,9 +351,11 @@ Return the complete Dafny program with your added assertions inside <DAFNY_CODE>
 <DAFNY_CODE>
 """
     else:
-        return f"""Your previous attempt to add assertions failed verification. Here is the error:
+        return f"""Your previous attempt failed verification. Here is the error:
 
 {dafny_error}
+
+REMINDER: Do NOT modify any existing code or specifications. Only add `assert` statements (and optionally helper lemmas). Any code modification will be automatically detected and rejected.
 
 The original program (without assertions) is:
 
