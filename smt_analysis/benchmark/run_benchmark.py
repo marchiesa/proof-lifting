@@ -189,9 +189,13 @@ def extract_spec_from_ast(ast: dict) -> dict:
 
 
 def compare_specs(original_ast_path: Path, candidate_ast_path: Path) -> tuple[bool, str]:
-    """Compare formal specs from two AST mappings.
+    """Compare formal specs from two AST mappings (superset check).
 
-    Returns (match, message). If specs differ, message describes the difference.
+    The candidate must contain ALL original functions/predicates and methods
+    with identical requires/ensures/invariants. The candidate MAY add new
+    helper lemmas, functions, or predicates — that's valid.
+
+    Returns (match, message).
     """
     try:
         orig = json.loads(original_ast_path.read_text())
@@ -202,19 +206,20 @@ def compare_specs(original_ast_path: Path, candidate_ast_path: Path) -> tuple[bo
     orig_spec = extract_spec_from_ast(orig)
     cand_spec = extract_spec_from_ast(cand)
 
-    # Compare functions
-    if orig_spec["functions"] != cand_spec["functions"]:
-        return False, f"Functions differ: {orig_spec['functions']} vs {cand_spec['functions']}"
+    # All original functions must still exist (new ones are OK)
+    orig_fns = set(orig_spec["functions"])
+    cand_fns = set(cand_spec["functions"])
+    missing_fns = orig_fns - cand_fns
+    if missing_fns:
+        return False, f"Missing functions: {sorted(missing_fns)}"
 
-    # Compare methods
+    # All original methods must exist with identical spec (new lemmas OK)
     orig_methods = {m["name"]: m for m in orig_spec["methods"]}
     cand_methods = {m["name"]: m for m in cand_spec["methods"]}
 
-    if set(orig_methods.keys()) != set(cand_methods.keys()):
-        return False, f"Method names differ: {sorted(orig_methods.keys())} vs {sorted(cand_methods.keys())}"
-
-    for name in orig_methods:
-        om = orig_methods[name]
+    for name, om in orig_methods.items():
+        if name not in cand_methods:
+            return False, f"Missing method: {name}"
         cm = cand_methods[name]
         if om["requires"] != cm["requires"]:
             return False, f"Method {name}: requires differ"
@@ -223,7 +228,15 @@ def compare_specs(original_ast_path: Path, candidate_ast_path: Path) -> tuple[bo
         if om["invariants"] != cm["invariants"]:
             return False, f"Method {name}: invariants differ"
 
-    return True, "Specs match"
+    added = set(cand_methods.keys()) - set(orig_methods.keys())
+    added_fns = cand_fns - orig_fns
+    extras = []
+    if added:
+        extras.append(f"added methods: {sorted(added)}")
+    if added_fns:
+        extras.append(f"added functions: {sorted(added_fns)}")
+    msg = "Specs match" + (f" ({', '.join(extras)})" if extras else "")
+    return True, msg
 
 
 def run_dafny(code: str, tmp_dir: Path,

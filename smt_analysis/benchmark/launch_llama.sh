@@ -16,7 +16,6 @@
 WORK="/leonardo_work/EUHPC_D29_022/mchiesa0"
 MODEL="$WORK/models/gpt-oss-20b-mxfp4.gguf"
 LLAMA_SERVER="$WORK/software/llama.cpp/build/bin/llama-server"
-DAFNY="$WORK/software/dafny/dafny"
 Z3="$WORK/software/z3/bin/z3"
 BENCHMARK_DIR="$WORK/benchmark"
 INPUTS_DIR="$BENCHMARK_DIR/inputs"
@@ -30,7 +29,8 @@ set -e
 module load cuda/12.3
 module load python/3.11.7
 
-export DAFNY="$DAFNY"
+export DOTNET8="$WORK/software/dotnet8/dotnet"
+export DAFNY_DLL="$WORK/software/dafny-modified/Dafny.dll"
 export Z3_PATH="$Z3"
 
 mkdir -p "$RESULTS_DIR" "$WORK/logs"
