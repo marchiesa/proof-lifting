@@ -40,6 +40,30 @@ VERIFY_TIMEOUT = 60
 
 SYSTEM_MSG = "You are a Dafny verification expert. Output only the requested JSON, no explanations."
 
+
+def _find_assert_end(lines: list, start: int) -> int:
+    """Find end line (inclusive) of an assert statement starting at `start`."""
+    j = start
+    while j < len(lines):
+        stripped = lines[j].strip()
+        if "by {" in stripped or "by{" in stripped:
+            depth = stripped.count("{") - stripped.count("}")
+            j += 1
+            while j < len(lines) and depth > 0:
+                depth += lines[j].count("{") - lines[j].count("}")
+                j += 1
+            return j - 1
+        if stripped.endswith(";"):
+            k = j + 1
+            while k < len(lines) and lines[k].strip() == "":
+                k += 1
+            if k < len(lines) and lines[k].strip().startswith("by"):
+                j = k
+                continue
+            return j
+        j += 1
+    return min(j, len(lines) - 1)
+
 GPT_OSS_TEMPLATE = (
     "<|start|>system<|message|>{system}<|end|>"
     "<|start|>user<|message|>{user}<|end|>"
@@ -85,7 +109,6 @@ def make_placeholder_code(source_path: Path, assertions: list[dict]) -> tuple[st
 
         stripped = lines[start].strip()
         if stripped.startswith("assert "):
-            from fast_diagnose import _find_assert_end
             end = _find_assert_end(lines, start)
             for j in range(start, end + 1):
                 lines[j] = ""
