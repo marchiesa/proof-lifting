@@ -63,17 +63,14 @@ dotnet build Source/Boogie.sln
 cd ..
 ```
 
-### 4. Set environment
+### 4. Set environment (only if `dotnet --version` is not 8.x)
 
 ```bash
-# Point to .NET 8 binary (required if "dotnet" in PATH is not v8)
 export DOTNET8=/path/to/dotnet8
-
-# macOS Homebrew example:
-export DOTNET8=/opt/homebrew/Cellar/dotnet@8/8.0.124/libexec/dotnet
 ```
 
 All scripts read `DOTNET8` (falls back to `DOTNET`, then `dotnet` in PATH).
+If your default `dotnet` is already v8, no env var is needed.
 
 ## Running the Pipeline
 
@@ -83,8 +80,6 @@ If you just want to reproduce the ablation and classification results
 from the already-committed dataset (95 verified programs):
 
 ```bash
-export DOTNET8=/path/to/dotnet8
-
 # Ablation: ~15 min with 5 workers
 python3 smt_analysis/fast_diagnose.py --all --ablate-only --workers 5
 
