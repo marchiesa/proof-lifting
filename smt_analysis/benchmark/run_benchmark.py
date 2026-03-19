@@ -41,7 +41,8 @@ from pathlib import Path
 # Config
 # ---------------------------------------------------------------------------
 
-DAFNY = os.environ.get("DAFNY", "dafny")
+DAFNY = os.environ.get("DOTNET8", os.environ.get("DOTNET", "dotnet"))
+DAFNY_DLL = os.environ.get("DAFNY_DLL", "Dafny.dll")
 Z3_PATH = os.environ.get("Z3_PATH", None)
 TIMEOUT_PER_PROBLEM = 500  # seconds
 MAX_TOKENS = 16384
@@ -166,15 +167,79 @@ def extract_code(response: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Dafny verification
+# Dafny verification + spec comparison via AST mapping
 # ---------------------------------------------------------------------------
 
-def run_dafny(code: str, tmp_dir: Path) -> tuple[bool, str, float]:
-    """Write code to temp file, run dafny verify. Returns (success, output, time)."""
+def extract_spec_from_ast(ast: dict) -> dict:
+    """Extract formal spec from AST mapping: functions, method signatures."""
+    spec = {}
+    spec["functions"] = sorted(
+        [f["dafnyName"] for f in ast.get("functions", [])]
+    )
+    methods = []
+    for m in ast.get("methods", []):
+        methods.append({
+            "name": m["name"],
+            "requires": [r["text"] for r in m.get("requires", [])],
+            "ensures": [e["text"] for e in m.get("ensures", [])],
+            "invariants": [inv["text"] for inv in m.get("invariants", [])],
+        })
+    spec["methods"] = methods
+    return spec
+
+
+def compare_specs(original_ast_path: Path, candidate_ast_path: Path) -> tuple[bool, str]:
+    """Compare formal specs from two AST mappings.
+
+    Returns (match, message). If specs differ, message describes the difference.
+    """
+    try:
+        orig = json.loads(original_ast_path.read_text())
+        cand = json.loads(candidate_ast_path.read_text())
+    except (json.JSONDecodeError, FileNotFoundError) as e:
+        return False, f"AST parse error: {e}"
+
+    orig_spec = extract_spec_from_ast(orig)
+    cand_spec = extract_spec_from_ast(cand)
+
+    # Compare functions
+    if orig_spec["functions"] != cand_spec["functions"]:
+        return False, f"Functions differ: {orig_spec['functions']} vs {cand_spec['functions']}"
+
+    # Compare methods
+    orig_methods = {m["name"]: m for m in orig_spec["methods"]}
+    cand_methods = {m["name"]: m for m in cand_spec["methods"]}
+
+    if set(orig_methods.keys()) != set(cand_methods.keys()):
+        return False, f"Method names differ: {sorted(orig_methods.keys())} vs {sorted(cand_methods.keys())}"
+
+    for name in orig_methods:
+        om = orig_methods[name]
+        cm = cand_methods[name]
+        if om["requires"] != cm["requires"]:
+            return False, f"Method {name}: requires differ"
+        if om["ensures"] != cm["ensures"]:
+            return False, f"Method {name}: ensures differ"
+        if om["invariants"] != cm["invariants"]:
+            return False, f"Method {name}: invariants differ"
+
+    return True, "Specs match"
+
+
+def run_dafny(code: str, tmp_dir: Path,
+              original_ast_path: Path | None = None) -> tuple[bool, str, float, str]:
+    """Write code to temp file, run dafny verify with AST mapping.
+
+    Returns (success, output, time, spec_check_msg).
+    If original_ast_path is provided, compares specs and rejects if different.
+    """
     dfy_path = tmp_dir / "attempt.dfy"
     dfy_path.write_text(code)
+    ast_path = tmp_dir / "attempt_ast.json"
 
-    cmd = [DAFNY, "verify", str(dfy_path), "--verification-time-limit", str(VERIFY_TIMEOUT)]
+    cmd = [DAFNY, str(DAFNY_DLL), "verify", str(dfy_path),
+           "--verification-time-limit", str(VERIFY_TIMEOUT),
+           "--ast-mapping", str(ast_path)]
     if Z3_PATH:
         cmd.extend(["--solver-path", Z3_PATH])
 
@@ -188,8 +253,17 @@ def run_dafny(code: str, tmp_dir: Path) -> tuple[bool, str, float]:
         output = f"ERROR: dafny not found at {DAFNY}"
 
     elapsed = time.perf_counter() - t0
-    success = "0 errors" in output
-    return success, output.strip(), round(elapsed, 2)
+    verified = "0 errors" in output
+
+    # Spec comparison
+    spec_msg = ""
+    if original_ast_path and ast_path.exists():
+        spec_ok, spec_msg = compare_specs(original_ast_path, ast_path)
+        if not spec_ok:
+            verified = False  # reject even if dafny says 0 errors
+            output += f"\nSPEC_CHANGED: {spec_msg}"
+
+    return verified, output.strip(), round(elapsed, 2), spec_msg
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +313,11 @@ def run_problem(problem_name: str, inputs_dir: Path, output_dir: Path,
     problem_input = inputs_dir / problem_name
     meta = json.loads((problem_input / "meta.json").read_text())
     stripped_code = (problem_input / "stripped.dfy").read_text()
+
+    # Reference AST for spec comparison
+    ref_ast_path = problem_input / "reference_ast.json"
+    if not ref_ast_path.exists():
+        ref_ast_path = None
 
     # Setup output
     problem_out = output_dir / problem_name
@@ -315,10 +394,11 @@ def run_problem(problem_name: str, inputs_dir: Path, output_dir: Path,
             continue
 
         # Run dafny verify
-        success, dafny_output, verify_time = run_dafny(code, tmp_dir)
+        success, dafny_output, verify_time, spec_msg = run_dafny(code, tmp_dir, ref_ast_path)
         attempt_data["dafny_success"] = success
         attempt_data["dafny_output"] = dafny_output
         attempt_data["dafny_time"] = verify_time
+        attempt_data["spec_check"] = spec_msg
 
         result["attempts"].append(attempt_data)
 

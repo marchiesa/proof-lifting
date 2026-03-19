@@ -123,6 +123,12 @@ def prepare_problem(problem_name: str) -> dict | None:
     (out_dir / "stripped.dfy").write_text(stripped)
     (out_dir / "prompt.txt").write_text(prompt)
 
+    # Copy reference AST mapping (for spec comparison during benchmark)
+    ref_ast = problem_dir / "artifacts" / "ast_mapping.json"
+    if ref_ast.exists():
+        import shutil
+        shutil.copy2(ref_ast, out_dir / "reference_ast.json")
+
     meta = {
         "problem": problem_name,
         "source_file": source_file.name,
