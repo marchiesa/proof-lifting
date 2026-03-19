@@ -53,24 +53,38 @@ VERIFY_TIMEOUT = 60  # seconds per dafny verify call
 # LLM backends
 # ---------------------------------------------------------------------------
 
+SYSTEM_MSG = "You are a Dafny verification expert. Output only code, no explanations."
+
+# gpt-oss chat template (from llama.cpp log)
+GPT_OSS_TEMPLATE = (
+    "<|start|>system<|message|>{system}<|end|>"
+    "<|start|>user<|message|>{user}<|end|>"
+    "<|start|>assistant<|channel|>final<|message|>"
+)
+
+
+def _format_chat(prompt: str) -> str:
+    """Apply gpt-oss chat template to a prompt."""
+    return GPT_OSS_TEMPLATE.format(system=SYSTEM_MSG, user=prompt)
+
+
 def call_sglang(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
                 temperature: float = 0.7) -> dict:
-    """Call SGLang /v1/chat/completions endpoint. Returns {text, tokens, time, raw}."""
+    """Call SGLang /generate endpoint with manual chat template."""
     import urllib.request
 
+    formatted = _format_chat(prompt)
     payload = json.dumps({
-        "model": "gpt-oss",
-        "messages": [
-            {"role": "system", "content": "You are a Dafny verification expert. Output only code, no explanations."},
-            {"role": "user", "content": prompt},
-        ],
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "stop": ["</DAFNY_CODE>"],
+        "text": formatted,
+        "sampling_params": {
+            "max_new_tokens": max_tokens,
+            "temperature": temperature,
+            "stop": ["</DAFNY_CODE>", "<|end|>"],
+        },
     }).encode("utf-8")
 
     req = urllib.request.Request(
-        f"{url}/v1/chat/completions",
+        f"{url}/generate",
         data=payload,
         headers={"Content-Type": "application/json"},
     )
@@ -79,19 +93,20 @@ def call_sglang(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
     try:
         with urllib.request.urlopen(req, timeout=600) as resp:
             result = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:500]
+        return {"text": "", "tokens": 0, "time": 0, "error": f"HTTP {e.code}: {body}"}
     except Exception as e:
         return {"text": "", "tokens": 0, "time": 0, "error": str(e)}
 
     elapsed = time.perf_counter() - t0
-
-    choices = result.get("choices", [])
-    text = choices[0].get("message", {}).get("content", "") if choices else ""
-    usage = result.get("usage", {})
+    text = result.get("text", "")
+    meta = result.get("meta_info", {})
 
     return {
         "text": text,
-        "tokens": usage.get("completion_tokens", 0),
-        "prompt_tokens": usage.get("prompt_tokens", 0),
+        "tokens": meta.get("completion_tokens", 0),
+        "prompt_tokens": meta.get("prompt_tokens", 0),
         "time": round(elapsed, 2),
         "raw": result,
     }
@@ -99,13 +114,13 @@ def call_sglang(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
 
 def call_llama(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
                temperature: float = 0.7) -> dict:
-    """Call llama.cpp /v1/chat/completions endpoint. Returns {text, tokens, time}."""
+    """Call llama.cpp /v1/chat/completions endpoint."""
     import urllib.request
 
     payload = json.dumps({
         "model": "gpt-oss",
         "messages": [
-            {"role": "system", "content": "You are a Dafny verification expert. Output only code, no explanations."},
+            {"role": "system", "content": SYSTEM_MSG},
             {"role": "user", "content": prompt},
         ],
         "max_tokens": max_tokens,
@@ -123,6 +138,9 @@ def call_llama(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
     try:
         with urllib.request.urlopen(req, timeout=600) as resp:
             result = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:500]
+        return {"text": "", "tokens": 0, "time": 0, "error": f"HTTP {e.code}: {body}"}
     except Exception as e:
         return {"text": "", "tokens": 0, "time": 0, "error": str(e)}
 
@@ -438,13 +456,17 @@ def run_problem(problem_name: str, inputs_dir: Path, output_dir: Path,
         result["total_prompt_tokens"] += llm_result.get("prompt_tokens", 0)
 
         if llm_result.get("error"):
-            print(f"  [{problem_name}] LLM error: {llm_result['error']}")
+            err_msg = llm_result["error"][:200]
+            print(f"  [{problem_name}] LLM error: {err_msg}")
             attempt_data["dafny_success"] = False
             attempt_data["dafny_output"] = ""
+            attempt_data["llm_error"] = llm_result["error"]
             result["attempts"].append(attempt_data)
-            # Don't retry on OOM or connection errors — they won't recover
+            # Don't retry on fatal errors
             if "out of memory" in llm_result["error"].lower():
                 break
+            # Sleep before retry to avoid spin loop
+            time.sleep(5)
             continue
 
         # Extract code
