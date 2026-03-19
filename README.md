@@ -145,60 +145,90 @@ Use `name_map.json` to decode SMT names to Boogie, then `ast_mapping.json` to de
 ### SMT Quirk Analysis Pipeline (`smt_analysis/`)
 
 Automated pipeline to discover and classify SMT solver quirks across the dataset.
+The main script is `smt_analysis/fast_diagnose.py`.
+
+#### Prerequisites
+
+- .NET 8 SDK (set `DOTNET8` env var to the binary path if not in `$PATH`)
+- Modified Dafny built in `dafny-source/` (see Setup above)
+- Modified Boogie built in `boogie/` (see Setup above)
+- Python 3.10+
+
+#### Quick start (reproduce from clone)
+
+```bash
+git clone https://github.com/marchiesa/proof-lifting.git
+cd proof-lifting
+
+# Clone and build Dafny + Boogie (see Setup section above)
+# ...
+
+# Set dotnet 8 path (macOS example)
+export DOTNET8=/opt/homebrew/Cellar/dotnet@8/8.0.124/libexec/dotnet
+
+# Step 1: Ablation — find essential assertions (95 problems, ~15 min with 5 workers)
+python3 smt_analysis/fast_diagnose.py --all --ablate-only --workers 5
+
+# Step 2: Diagnosis — classify essential assertions (~30 min with 5 workers)
+python3 smt_analysis/fast_diagnose.py --all --diagnose-only --workers 5
+```
+
+Results are written to `smt_analysis/results/{problem}/`:
+- `ablation/results.json` — per-assertion essentiality
+- `ablation/without_NN.dfy` — variant files with each assertion removed
+- `models/assert_NN/boogie_model.txt` — Z3 counterexample models
+- `fast_report.json` — diagnosis with categories
+- `diagnosis_summary.json` — aggregate summary across all problems
+
+The list of problems that actually verify is in `smt_analysis/results/verified_problems.txt`
+(95 problems). The pipeline only processes these.
+
+#### Running on specific problems
+
+```bash
+# Single problem
+python3 smt_analysis/fast_diagnose.py --names 0000_1013_A
+
+# Multiple problems
+python3 smt_analysis/fast_diagnose.py --names 0000_1013_A 0003_1028_A 0009_1041_A
+
+# Full pipeline (ablation + diagnosis) on one problem
+python3 smt_analysis/fast_diagnose.py --names 0000_1013_A
+```
+
+#### Pipeline phases
+
+For each problem, `fast_diagnose.py` runs:
+
+1. **PARSE** — extract `assert` statements from method bodies using the AST mapping
+   (`--ast-mapping` flag on the modified Dafny compiler)
+2. **ABLATE** — remove each assertion one at a time, run `dafny verify`, mark as
+   essential if verification fails. Handles `assert ... by { ... }` blocks as
+   single units.
+3. **MODEL** — for essential equality assertions, run Dafny → Boogie with
+   `/printModel:1` to extract Z3's counterexample model
+4. **DIAGNOSE** — pattern-match assertion text (B1 sub-patterns) and analyze the
+   model to detect sequence extensionality gaps
+5. **REPORT** — write structured `fast_report.json` with categories
 
 #### Dataset generation
 
 ```bash
 # Generate 100 problems from Codeforces (rating ≤ 1600)
 python3 pipeline.py --start 0 --count 100 --workers 10 --max-rating 1600
-
-# Continuous generation
-bash generate_loop.sh [start_index] [batch_size] [workers]
 ```
 
 #### Verification (add invariants/assertions to make `dafny verify` pass)
 
 ```bash
-# Verify all unverified problems (5 workers)
 python3 smt_analysis/quirk_finder.py --all --verify-only --workers 5 --skip-verified
 ```
 
-#### Lemma inlining (convert non-recursive lemmas to inline assertions)
+#### Check which problems actually verify
 
 ```bash
-# Dry run — show what would be inlined
-python3 smt_analysis/inline_lemmas.py --all --dry-run
-
-# Inline for all verified problems
-python3 smt_analysis/inline_lemmas.py --all --workers 5
-```
-
-Non-recursive lemmas are essentially packaged assertions. Inlining them makes
-ablation more granular — individual assertions can be tested instead of opaque
-lemma calls. The script re-verifies after inlining and only keeps changes that pass.
-
-#### Full analysis (annotate → ablate → diagnose → axiom proposal)
-
-```bash
-# Run analysis on all verified problems (skips verification step)
-python3 smt_analysis/quirk_finder.py --all --analyze-only --workers 5 --skip-analyzed
-
-# Run on specific problems
-python3 smt_analysis/quirk_finder.py --names 0006_1017_A --analyze-only
-```
-
-For each verified problem, the pipeline:
-1. **ANNOTATE** — translates SMT names to Dafny names via the mapping chain
-2. **ABLATE** — removes each assertion one at a time, finds essential ones
-3. **DIAGNOSE** — extracts SMT logs, analyzes trigger gaps, identifies the solver limitation
-4. **AXIOM** — proposes Boogie axioms and tests them by patching the BPL
-5. **REPORT** — writes structured `report.json` with all findings
-
-#### Axiom testing
-
-```bash
-# Test a proposed Boogie axiom against a failing BPL
-bash smt_analysis/helpers/test_axiom.sh <bpl_file> <axiom_file> [timeout]
+python3 smt_analysis/check_verified.py
+# Outputs: smt_analysis/results/verified_problems.txt
 ```
 
 ### CEGAR-style proof hint discovery
