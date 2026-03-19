@@ -33,7 +33,7 @@ RESULTS_DIR = PROJ_ROOT / "smt_analysis" / "results"
 HELPERS_DIR = PROJ_ROOT / "smt_analysis" / "helpers"
 DOTNET = os.environ.get("DOTNET8", os.environ.get("DOTNET", "dotnet"))
 DAFNY_DLL = PROJ_ROOT / "dafny-source" / "Binaries" / "Dafny.dll"
-BOOGIE_PROJ = PROJ_ROOT / "boogie" / "Source" / "BoogieDriver" / "BoogieDriver.csproj"
+BOOGIE_DLL = PROJ_ROOT / "boogie" / "Source" / "BoogieDriver" / "bin" / "Debug" / "net8.0" / "BoogieDriver.dll"
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +291,7 @@ def get_model_for_assertion(problem_dir: Path, assertion: dict, timeout: int = 6
 
     # Step 2: Run Boogie with /printModel:1
     boogie_result = subprocess.run(
-        [DOTNET, "run", "--project", str(BOOGIE_PROJ), "--",
+        [DOTNET, str(BOOGIE_DLL),
          str(bpl_path), "/printModel:1", f"/timeLimit:{timeout}"],
         capture_output=True, text=True, timeout=timeout + 60,
     )
