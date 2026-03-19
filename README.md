@@ -329,6 +329,21 @@ Committed in `smt_analysis/benchmark/results/gpt-oss-20b/`.
 - A2 (predicate instantiation) problems: high pass rate
 - 25.5% of attempts rejected by AST check (9% spec, 16.5% body)
 
+### Placeholder experiment
+
+A focused variant: instead of rewriting the whole program, the LLM sees
+numbered placeholders where assertions were removed and outputs only the
+assertions (as a JSON array). This tests "can the LLM guess WHAT is needed,
+given WHERE it's needed?" — no code modification risk, per-assertion accuracy.
+
+```bash
+# Deploy (same inputs, different script)
+scp smt_analysis/benchmark/run_placeholder.py $REMOTE:$BENCHMARK_DIR/
+
+# Run on Leonardo (SGLang, 4 GPUs)
+sbatch $WORK/benchmark/launch_placeholder_sglang.sh
+```
+
 ## Proof Lifting (Dafny → Boogie → SMT mapping)
 
 The pipeline uses modified Dafny and Boogie compilers that capture mappings
