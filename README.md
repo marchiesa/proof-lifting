@@ -295,8 +295,12 @@ The benchmarks run on [CINECA Leonardo](https://www.hpc.cineca.it/systems/hardwa
 (A100 GPUs, SLURM scheduler). One-time setup:
 
 ```bash
+# Register SSH key with CINECA (one-time, run in your terminal — not in Claude Code):
+#   step ssh login 'user@something.com' --provisioner cineca-hpc
+# This generates a short-lived SSH certificate via the Step authenticator.
+
 # SSH to login node
-ssh login.leonardo.cineca.it   # requires TOTP authenticator
+ssh login.leonardo.cineca.it
 
 # Paths on Leonardo (account EUHPC_D29_022)
 export WORK=/leonardo_work/EUHPC_D29_022/mchiesa0
