@@ -1,0 +1,29 @@
+{
+  "problem": "0008_1056_A",
+  "source_file": "verified_inlined.dfy",
+  "total_assertions": 16,
+  "essential_count": 5,
+  "essential_assertions": [
+    {
+      "line": 57,
+      "text": "assert newResult[w] == result[idx];"
+    },
+    {
+      "line": 62,
+      "text": "assert newResult[|oldNR|] == result[i];"
+    },
+    {
+      "line": 99,
+      "text": "assert InSeq(x, result);"
+    },
+    {
+      "line": 93,
+      "text": "assert forall x: int {:trigger InSeq(x, newResult)} :: (forall m: int {:trigger stops[m]} | 0 <= m < k + 1 :: InSeq(x, stops[m])) ==> InSeq(x, newResult);"
+    },
+    {
+      "line": 93,
+      "text": "assert forall x: int {:trigger InSeq(x, newResult)} :: (forall m: int {:trigger stops[m]} | 0 <= m < k + 1 :: InSeq(x, stops[m])) ==> InSeq(x, newResult);"
+    }
+  ],
+  "original_code": "ghost predicate InSeq(x: int, s: seq<int>)\n{\n  exists i | 0 <= i < |s| :: s[i] == x\n}\n\n// A line is possible iff it stops at every observed stop\nghost predicate PossibleLine(line: int, stops: seq<seq<int>>)\n{\n  forall k | 0 <= k < |stops| :: InSeq(line, stops[k])\n}\n\nlemma InSeqExtend(x: int, s: seq<int>, y: int)\n  requires InSeq(x, s)\n  ensures InSeq(x, s + [y])\n{\n  var w :| 0 <= w < |s| && s[w] == x;\n  assert (s + [y])[w] == x;\n}\n\nmethod DetermineLine(stops: seq<seq<int>>) returns (result: seq<int>)\n  // Soundness: every element in result is a possible line\n  ensures forall i | 0 <= i < |result| :: PossibleLine(result[i], stops)\n  // Completeness: every possible line appears in result\n  ensures forall k | 0 <= k < |stops| :: forall j | 0 <= j < |stops[k]| ::\n            PossibleLine(stops[k][j], stops) ==> InSeq(stops[k][j], result)\n{\n  if |stops| == 0 { result := []; return; }\n  result := stops[0];\n  for k := 1 to |stops|\n    invariant forall i | 0 <= i < |result| :: forall m | 0 <= m < k :: InSeq(result[i], stops[m])\n    invariant forall x :: (forall m | 0 <= m < k :: InSeq(x, stops[m])) ==> InSeq(x, result)\n  {\n    var newResult: seq<int> := [];\n    for i := 0 to |result|\n      invariant forall idx | 0 <= idx < |newResult| :: InSeq(newResult[idx], stops[k]) && InSeq(newResult[idx], result)\n      invariant forall idx | 0 <= idx < i :: InSeq(result[idx], stops[k]) ==> InSeq(result[idx], newResult)\n    {\n      var found := false;\n      for j := 0 to |stops[k]|\n        invariant found <==> exists j' | 0 <= j' < j :: result[i] == stops[k][j']\n      {\n        if result[i] == stops[k][j] {\n          found := true;\n        }\n      }\n      if found {\n        ghost var oldNR := newResult;\n        newResult := newResult + [result[i]];\n        // Prove invariant 2 is maintained for all idx < i+1\n        forall idx | 0 <= idx < i + 1\n          ensures InSeq(result[idx], stops[k]) ==> InSeq(result[idx], newResult)\n        {\n          if idx < i {\n            if InSeq(result[idx], stops[k]) {\n              assert InSeq(result[idx], oldNR);\n              var w :| 0 <= w < |oldNR| && oldNR[w] == result[idx];\n              assert newResult[w] == result[idx];\n            }\n          } else {\n            // idx == i, result[i] is last element of newResult\n            if InSeq(result[i], stops[k]) {\n              assert newResult[|oldNR|] == result[i];\n            }\n          }\n        }\n        // Prove invariant 1 is maintained for old elements\n        forall idx | 0 <= idx < |oldNR|\n          ensures InSeq(newResult[idx], stops[k]) && InSeq(newResult[idx], result)\n        {\n          assert newResult[idx] == oldNR[idx];\n        }\n      }\n    }\n\n    // Prove soundness for next iteration\n    assert forall i | 0 <= i < |newResult| :: forall m | 0 <= m < k + 1 :: InSeq(newResult[i], stops[m])\n    by {\n      forall i | 0 <= i < |newResult|\n        ensures forall m | 0 <= m < k + 1 :: InSeq(newResult[i], stops[m])\n      {\n        assert InSeq(newResult[i], stops[k]);\n        assert InSeq(newResult[i], result);\n        var ridx :| 0 <= ridx < |result| && result[ridx] == newResult[i];\n        forall m | 0 <= m < k\n          ensures InSeq(newResult[i], stops[m])\n        {\n          assert InSeq(result[ridx], stops[m]);\n        }\n      }\n    }\n\n    // Prove completeness for next iteration\n    assert forall x :: (forall m | 0 <= m < k + 1 :: InSeq(x, stops[m])) ==> InSeq(x, newResult)\n    by {\n      forall x | (forall m | 0 <= m < k + 1 :: InSeq(x, stops[m]))\n        ensures InSeq(x, newResult)\n      {\n        assert forall m | 0 <= m < k :: InSeq(x, stops[m]);\n        assert InSeq(x, result);\n        var ridx :| 0 <= ridx < |result| && result[ridx] == x;\n        assert InSeq(x, stops[k]);\n        assert InSeq(result[ridx], stops[k]);\n        assert InSeq(result[ridx], newResult);\n      }\n    }\n\n    result := newResult;\n  }\n}\n\nmethod SameElements(a: seq<int>, b: seq<int>) returns (same: bool)\n{\n  if |a| != |b| { return false; }\n  for i := 0 to |a| {\n    var found := false;\n    for j := 0 to |b| {\n      if a[i] == b[j] { found := true; }\n    }\n    if !found { return false; }\n  }\n  for i := 0 to |b| {\n    var found := false;\n    for j := 0 to |a| {\n      if b[i] == a[j] { found := true; }\n    }\n    if !found { return false; }\n  }\n  return true;\n}\n"
+}

@@ -1,0 +1,37 @@
+{
+  "problem": "0103_1305_A",
+  "source_file": "verified.dfy",
+  "total_assertions": 12,
+  "essential_count": 7,
+  "essential_assertions": [
+    {
+      "line": 148,
+      "text": "assert sorted == sorted[..i] + sorted[i..];"
+    },
+    {
+      "line": 163,
+      "text": "assert s[..i + 1] == s[..i] + [s[i]];"
+    },
+    {
+      "line": 167,
+      "text": "assert s[..|s|] == s;"
+    },
+    {
+      "line": 186,
+      "text": "assert |x| == |a|;"
+    },
+    {
+      "line": 186,
+      "text": "assert |x| == |a|;"
+    },
+    {
+      "line": 190,
+      "text": "assert |y| == |b|;"
+    },
+    {
+      "line": 190,
+      "text": "assert |y| == |b|;"
+    }
+  ],
+  "original_code": "// ---------------------------------------------------------------------------\n// Specification predicates and functions\n// ---------------------------------------------------------------------------\n\nghost predicate IsSorted(s: seq<int>)\n{\n  forall i, j | 0 <= i < j < |s| :: s[i] <= s[j]\n}\n\nghost predicate PairwiseDistinct(s: seq<int>)\n{\n  forall i, j | 0 <= i < j < |s| :: s[i] != s[j]\n}\n\nghost predicate IsPermutation(a: seq<int>, b: seq<int>)\n{\n  multiset(a) == multiset(b)\n}\n\nghost function Sums(x: seq<int>, y: seq<int>): seq<int>\n  requires |x| == |y|\n  decreases |x|\n{\n  if |x| == 0 then []\n  else Sums(x[..|x|-1], y[..|y|-1]) + [x[|x|-1] + y[|y|-1]]\n}\n\n// ---------------------------------------------------------------------------\n// Helper Lemmas\n// ---------------------------------------------------------------------------\n\nlemma SumsLength(x: seq<int>, y: seq<int>)\n  requires |x| == |y|\n  ensures |Sums(x, y)| == |x|\n  decreases |x|\n{\n  if |x| > 0 {\n    SumsLength(x[..|x|-1], y[..|y|-1]);\n  }\n}\n\nlemma SumsElement(x: seq<int>, y: seq<int>, k: int)\n  requires |x| == |y|\n  requires 0 <= k < |x|\n  ensures |Sums(x, y)| == |x|\n  ensures Sums(x, y)[k] == x[k] + y[k]\n  decreases |x|\n{\n  SumsLength(x, y);\n  if k < |x| - 1 {\n    SumsElement(x[..|x|-1], y[..|y|-1], k);\n  }\n}\n\nlemma NotInSeqZeroCount(s: seq<int>, v: int)\n  requires forall i | 0 <= i < |s| :: s[i] != v\n  ensures multiset(s)[v] == 0\n  decreases |s|\n{\n  if |s| > 0 {\n    assert s == s[..|s|-1] + [s[|s|-1]];\n    NotInSeqZeroCount(s[..|s|-1], v);\n  }\n}\n\nlemma DuplicateGivesCount2(s: seq<int>, i: int, j: int)\n  requires 0 <= i < j < |s|\n  requires s[i] == s[j]\n  ensures multiset(s)[s[i]] >= 2\n{\n  var left := s[..i + 1];\n  var right := s[i + 1..];\n  assert s == left + right;\n  assert left[i] == s[i];\n  assert right[j - i - 1] == s[j];\n}\n\nlemma DistinctBoundsCount(s: seq<int>, v: int)\n  requires PairwiseDistinct(s)\n  ensures multiset(s)[v] <= 1\n  decreases |s|\n{\n  if |s| > 0 {\n    var init := s[..|s| - 1];\n    assert s == init + [s[|s| - 1]];\n    DistinctBoundsCount(init, v);\n    if v == s[|s| - 1] {\n      forall k | 0 <= k < |init|\n        ensures init[k] != v\n      {\n      }\n      NotInSeqZeroCount(init, v);\n    }\n  }\n}\n\nlemma SortedPermDistinctIsStrict(s: seq<int>, orig: seq<int>)\n  requires IsSorted(s)\n  requires IsPermutation(s, orig)\n  requires PairwiseDistinct(orig)\n  ensures forall i, j | 0 <= i < j < |s| :: s[i] < s[j]\n{\n  forall i, j | 0 <= i < j < |s|\n    ensures s[i] < s[j]\n  {\n    if s[i] == s[j] {\n      DuplicateGivesCount2(s, i, j);\n      DistinctBoundsCount(orig, s[i]);\n    }\n  }\n}\n\nlemma SortedSumsDistinct(x: seq<int>, y: seq<int>, a: seq<int>, b: seq<int>)\n  requires |x| == |y|\n  requires IsSorted(x) && IsSorted(y)\n  requires IsPermutation(x, a) && IsPermutation(y, b)\n  requires PairwiseDistinct(a) && PairwiseDistinct(b)\n  ensures PairwiseDistinct(Sums(x, y))\n{\n  SortedPermDistinctIsStrict(x, a);\n  SortedPermDistinctIsStrict(y, b);\n  SumsLength(x, y);\n  forall i, j | 0 <= i < j < |Sums(x, y)|\n    ensures Sums(x, y)[i] != Sums(x, y)[j]\n  {\n    SumsElement(x, y, i);\n    SumsElement(x, y, j);\n  }\n}\n\n// ---------------------------------------------------------------------------\n// Methods with specification\n// ---------------------------------------------------------------------------\n\nmethod Insert(sorted: seq<int>, val: int) returns (result: seq<int>)\n  requires IsSorted(sorted)\n  ensures IsSorted(result)\n  ensures IsPermutation(result, sorted + [val])\n{\n  var i := 0;\n  while i < |sorted| && sorted[i] < val\n    invariant 0 <= i <= |sorted|\n    invariant forall j | 0 <= j < i :: sorted[j] < val\n  {\n    i := i + 1;\n  }\n  result := sorted[..i] + [val] + sorted[i..];\n  assert sorted == sorted[..i] + sorted[i..];\n  assert forall j | i <= j < |sorted| :: sorted[j] >= val;\n}\n\nmethod SortSeq(s: seq<int>) returns (sorted: seq<int>)\n  ensures IsSorted(sorted)\n  ensures IsPermutation(sorted, s)\n{\n  sorted := [];\n  var i := 0;\n  while i < |s|\n    invariant 0 <= i <= |s|\n    invariant IsSorted(sorted)\n    invariant IsPermutation(sorted, s[..i])\n  {\n    assert s[..i + 1] == s[..i] + [s[i]];\n    sorted := Insert(sorted, s[i]);\n    i := i + 1;\n  }\n  assert s[..|s|] == s;\n}\n\n// Specification of the problem:\n//   Given two length-n sequences with pairwise-distinct elements,\n//   produce permutations x of a and y of b such that the elementwise\n//   sums x[i] + y[i] are pairwise distinct.\nmethod KuroniAndTheGifts(a: seq<int>, b: seq<int>) returns (x: seq<int>, y: seq<int>)\n  requires |a| == |b|\n  requires PairwiseDistinct(a)\n  requires PairwiseDistinct(b)\n  ensures |x| == |a|\n  ensures |y| == |a|\n  ensures IsPermutation(x, a)\n  ensures IsPermutation(y, b)\n  ensures PairwiseDistinct(Sums(x, y))\n{\n  x := SortSeq(a);\n  y := SortSeq(b);\n  assert |x| == |a| by {\n    assert |multiset(x)| == |x|;\n    assert |multiset(a)| == |a|;\n  }\n  assert |y| == |b| by {\n    assert |multiset(y)| == |y|;\n    assert |multiset(b)| == |b|;\n  }\n  SortedSumsDistinct(x, y, a, b);\n}\n"
+}
