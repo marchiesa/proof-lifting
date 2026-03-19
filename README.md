@@ -275,6 +275,60 @@ Automated classification categories:
 - Unknown equality with model: 48
 - Unknown equality: 11
 
+## Step 7: LLM Benchmark
+
+Tests whether LLMs can recover the essential assertions that were stripped
+from verified code. The LLM receives the code with assertions removed and
+must add them back to make `dafny verify` pass. An AST-level comparison
+ensures the LLM doesn't cheat by modifying the code or formal spec.
+
+### Prepare inputs (local)
+
+```bash
+# Generates stripped.dfy, prompt.txt, reference_ast.json per problem
+DOTNET8=/path/to/dotnet8 python3 smt_analysis/benchmark/prepare.py
+```
+
+### Deploy to Leonardo
+
+```bash
+bash smt_analysis/benchmark/deploy.sh
+```
+
+### Run on Leonardo
+
+```bash
+# Quick test (llama.cpp, 1 GPU, 3 problems)
+sbatch $WORK/benchmark/launch_llama.sh "0024_1091_A 0068_1196_A 0012_1060_A"
+
+# Full run (SGLang, 4 GPUs, all 40 problems)
+sbatch $WORK/benchmark/launch_sglang.sh
+```
+
+### Integrity checks
+
+The benchmark uses AST-level comparison (via modified Dafny's `--ast-mapping`)
+to verify the LLM's output:
+
+1. **Spec check**: all original functions/predicates/methods must exist with
+   identical requires/ensures/invariants (new helper lemmas are OK)
+2. **Body check**: all non-assert statements in each method must be identical
+   to the original (asserts are excluded from comparison since those are what
+   the LLM adds)
+
+Any attempt that modifies code or spec is rejected, even if `dafny verify`
+reports 0 errors.
+
+### Results (gpt-oss-20b)
+
+Committed in `smt_analysis/benchmark/results/gpt-oss-20b/`.
+
+- 40 problems, 500s timeout, 1727 total attempts
+- **9/40 pass (22.5%)**
+- B1 (seq extensionality) problems: 0% pass rate
+- A2 (predicate instantiation) problems: high pass rate
+- 25.5% of attempts rejected by AST check (9% spec, 16.5% body)
+
 ## Proof Lifting (Dafny → Boogie → SMT mapping)
 
 The pipeline uses modified Dafny and Boogie compilers that capture mappings
