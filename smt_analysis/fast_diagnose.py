@@ -49,14 +49,18 @@ def generate_ast_mapping(dfy_path: Path, output_dir: Path, timeout: int = 60) ->
     ast_path = output_dir / "ast_mapping.json"
     bpl_path = output_dir / "output.bpl"
 
-    result = subprocess.run(
-        [DOTNET, str(DAFNY_DLL), "verify", str(dfy_path),
-         "--ast-mapping", str(ast_path),
-         "--bprint", str(bpl_path),
-         "--verification-time-limit", str(timeout)],
-        capture_output=True, text=True, timeout=timeout + 60,
-    )
-    (output_dir / "dafny_output.txt").write_text(result.stdout + "\n" + result.stderr)
+    try:
+        result = subprocess.run(
+            [DOTNET, str(DAFNY_DLL), "verify", str(dfy_path),
+             "--ast-mapping", str(ast_path),
+             "--bprint", str(bpl_path),
+             "--verification-time-limit", str(timeout)],
+            capture_output=True, text=True, timeout=timeout + 60,
+        )
+        (output_dir / "dafny_output.txt").write_text(result.stdout + "\n" + result.stderr)
+    except subprocess.TimeoutExpired:
+        (output_dir / "dafny_output.txt").write_text("TIMEOUT during AST generation\n")
+        return None
 
     if ast_path.exists():
         return ast_path
@@ -119,66 +123,84 @@ def _is_method_in_source(dfy_path: Path, method_name: str) -> bool:
 # Phase 2: Ablation — remove each assertion, check if verification still holds
 # ---------------------------------------------------------------------------
 
+def _find_assert_end(lines: list[str], start: int) -> int:
+    """Find the end line (inclusive) of an assert statement starting at `start`.
+
+    Handles three forms:
+      - ``assert expr;``                (single or multi-line, ends at ``;``)
+      - ``assert expr by { ... }``      (ends at matching ``}``)
+      - ``assert expr\n  by { ... }``   (``by`` on a following line)
+    """
+    # Collect the assert expression lines until we hit ';' or 'by {'
+    j = start
+    while j < len(lines):
+        stripped = lines[j].strip()
+        if "by {" in stripped or "by{" in stripped:
+            # assert ... by { ... } block — find matching close brace
+            depth = stripped.count("{") - stripped.count("}")
+            j += 1
+            while j < len(lines) and depth > 0:
+                depth += lines[j].count("{") - lines[j].count("}")
+                j += 1
+            return j - 1  # inclusive
+        if stripped.endswith(";"):
+            # Check if next non-blank line starts with 'by'
+            k = j + 1
+            while k < len(lines) and lines[k].strip() == "":
+                k += 1
+            if k < len(lines) and lines[k].strip().startswith("by"):
+                # The 'by' is on the next line — continue from there
+                j = k
+                continue
+            return j
+        j += 1
+    return min(j, len(lines) - 1)
+
+
 def create_without_variant(dfy_path: Path, assertion: dict, output_path: Path):
     """Create a variant of the .dfy file with one assertion removed.
 
-    Uses text matching to find the assertion, since AST line numbers may not
-    match the current file (e.g., after inlining).
+    Uses the AST line number to locate the assertion.  For standalone
+    assertions (the only statement on the line), the full line range is
+    commented out (including any ``by { ... }`` block).  For inline
+    assertions (sharing a line with other code, e.g.
+    ``if x { assert false; }``), only the ``assert ...;`` text is excised.
     """
-    content = dfy_path.read_text()
-    lines = content.split("\n")
+    lines = dfy_path.read_text().split("\n")
 
-    expr = assertion["expr"]
-    is_lemma_call = assertion.get("is_lemma_call", False)
-
-    # Strategy: find the line containing the assertion/call text
-    # For assertions: look for "assert <expr>" (AST gives normalized expr without ; prefix)
-    # For lemma calls: look for "<callee>(" pattern
-    target_line = None
-
-    if is_lemma_call:
-        # Lemma call: expr is the callee name
-        callee = expr
-        for i, line in enumerate(lines):
-            if callee + "(" in line.strip() and not line.strip().startswith("//"):
-                target_line = i
-                break
-    else:
-        # Assert: normalize spaces and look for the expression
-        # Remove extra spaces from both sides for matching
-        expr_normalized = re.sub(r'\s+', ' ', expr).strip()
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith("assert "):
-                line_expr = stripped[7:]
-                if line_expr.endswith(";"):
-                    line_expr = line_expr[:-1]
-                line_normalized = re.sub(r'\s+', ' ', line_expr).strip()
-                if line_normalized == expr_normalized:
-                    target_line = i
-                    break
-
-    if target_line is None:
-        # Fallback: try line number from AST
-        line_idx = assertion["line"] - 1
-        if 0 <= line_idx < len(lines):
-            target_line = line_idx
-
-    if target_line is None:
-        # Give up — write original file
-        output_path.write_text(content)
+    start = assertion["line"] - 1
+    if start < 0 or start >= len(lines):
+        output_path.write_text("\n".join(lines))
         return
 
-    # Comment out the line(s)
-    start = target_line
-    if is_lemma_call:
-        lines[start] = "    // REMOVED: " + lines[start].strip()
-    else:
-        end = start
-        while end < len(lines) and ";" not in lines[end]:
-            end += 1
-        for j in range(start, min(end + 1, len(lines))):
+    line = lines[start]
+    stripped = line.strip()
+
+    # Check if the assert is the only statement on this line
+    if stripped.startswith("assert "):
+        # Standalone assert — comment out the full block (including by-block)
+        end = _find_assert_end(lines, start)
+        for j in range(start, end + 1):
             lines[j] = "    // REMOVED: " + lines[j].strip()
+    else:
+        # Inline assert — surgically remove just the assert text
+        # Build the assert text from the AST expression
+        expr = assertion["expr"]
+        # Try exact removal of "assert <expr>;" from the line
+        for pattern in [f"assert {expr};", f" assert {expr};"]:
+            if pattern in line:
+                lines[start] = line.replace(pattern, "", 1)
+                break
+        else:
+            # Fallback: try normalized matching
+            expr_normalized = re.sub(r'\s+', ' ', expr).strip()
+            # Find "assert ...;" on this line using regex
+            m = re.search(r'assert\s+' + re.escape(expr_normalized) + r'\s*;', line)
+            if m:
+                lines[start] = line[:m.start()] + line[m.end():]
+            else:
+                # Last resort: just comment the whole line
+                lines[start] = "    // REMOVED: " + stripped
 
     output_path.write_text("\n".join(lines))
 
@@ -214,8 +236,21 @@ def run_ablation(problem_dir: Path, assertions: list[dict], source_file: Path,
 
         a["ablation_result"] = r["result"]
         a["ablation_time"] = r.get("time_seconds", 0)
-        a["essential"] = r["result"] != "pass"
         a["ablation_errors"] = r.get("errors", [])[:3]
+
+        # Parse errors and prover errors are NOT genuine essentiality signals —
+        # they indicate a bug in assertion removal, not that the solver needs it.
+        errs_text = " ".join(a["ablation_errors"])
+        if r["result"] == "parse_error" or "parse errors detected" in errs_text:
+            a["essential"] = False
+            a["ablation_result"] = "parse_error"
+            print(f"    [{a['index']:2d}] PARSE_ERROR (removal broke syntax) {a['text'][:60]}")
+        elif r["result"] == "prover_error":
+            a["essential"] = False
+            a["ablation_result"] = "prover_error"
+            print(f"    [{a['index']:2d}] PROVER_ERROR (solver crash) {a['text'][:60]}")
+        else:
+            a["essential"] = r["result"] != "pass"
 
         if a["essential"]:
             print(f"    [{a['index']:2d}] ESSENTIAL ({r['result']:7s} {r.get('time_seconds', 0):5.1f}s) {a['text'][:70]}")
@@ -344,74 +379,124 @@ def parse_boogie_model(raw: str) -> dict:
 # Phase 4: Diagnose — heuristic for equality assertions
 # ---------------------------------------------------------------------------
 
-# Known sequence axiom gap patterns
-PATTERNS = [
+# Taxonomy categories (paper: A=E-matching, B=Missing axioms, C=Theory, D=Propagation)
+#
+# B1: Sequence extensionality — missing object-level equality axioms
+SEQ_EXT_PATTERNS = [
     {
-        "name": "take-append",
+        "name": "B1-take-append",
+        "high_level": "B-missing-axioms",
+        "low_level": "B1-seq-extensionality",
+        "sub_pattern": "take-append",
         "desc": "Seq#Take(s, i+1) == Seq#Append(Seq#Take(s, i), Seq#Build(Seq#Index(s, i)))",
         "regex": r'(\w+)\[\.\.(\w+)\s*\+\s*1\]\s*==\s*\1\[\.\.\2\]\s*\+\s*\[\1\[\2\]\]',
     },
     {
-        "name": "take-full-length",
+        "name": "B1-take-full-length",
+        "high_level": "B-missing-axioms",
+        "low_level": "B1-seq-extensionality",
+        "sub_pattern": "take-full",
         "desc": "Seq#Take(s, |s|) == s",
         "regex": r'(\w+)\[\.\.\|(\1)\|\]\s*==\s*\1',
     },
     {
-        "name": "take-of-append-prefix",
+        "name": "B1-take-of-append-prefix",
+        "high_level": "B-missing-axioms",
+        "low_level": "B1-seq-extensionality",
+        "sub_pattern": "take-of-take",
         "desc": "(a + b)[..|a|] == a  or  combined[..|combined|-1] == a",
         "regex": r'(\w+)\[\.\.\|.*\|\s*-?\s*1?\]\s*==',
     },
     {
-        "name": "cons-decomposition",
+        "name": "B1-cons-decomposition",
+        "high_level": "B-missing-axioms",
+        "low_level": "B1-seq-extensionality",
+        "sub_pattern": "cons-decomposition",
         "desc": "s == [s[0]] + s[1..]",
         "regex": r'(\w+)\s*==\s*\[\1\[0\]\]\s*\+\s*\1\[1\.\.\]',
     },
     {
-        "name": "slice-index-equiv",
+        "name": "B1-slice-index-equiv",
+        "high_level": "B-missing-axioms",
+        "low_level": "B1-seq-extensionality",
+        "sub_pattern": "slice-index-equiv",
         "desc": "a[1..][i] == a[i+1] or similar slice-index equivalence",
         "regex": r'\w+\[\d+\.\.\]\[.*\]\s*==\s*\w+\[',
     },
 ]
 
+# All patterns for classify_assertion
+PATTERNS = SEQ_EXT_PATTERNS
+
 
 def classify_assertion(assertion: dict, model: dict | None) -> dict:
-    """Classify an essential assertion.
+    """Classify an essential assertion using the 4-category taxonomy.
 
-    Returns diagnosis dict with {category, pattern, confidence, details}.
+    Categories:
+      A. E-matching gaps (A1-A5): missing witnesses, predicate/function
+         instantiation, quantifier instantiation, length tracking
+      B. Missing axioms (B1): sequence extensionality
+      C. Theory incompleteness (C1): nonlinear arithmetic
+      D. Propagation failures (D1-D4): equality, bounds, indexing, case exhaustiveness
+
+    Returns diagnosis dict with {category, high_level, low_level, pattern,
+    confidence, details}.
+    Always tries both pattern matching and model-based diagnosis when a model
+    is available, so we can report both pieces of evidence.
     """
     expr = assertion["expr"]
 
-    # Non-equality → flag
+    # Non-equality → flag (may be A1 existential witness, A2 predicate, etc.)
     if not assertion["is_equality"]:
         return {
             "category": "flagged",
-            "reason": "non-equality assertion",
+            "high_level": "unknown",
+            "low_level": "unknown",
+            "reason": "non-equality assertion (may be A1-A5 or D1-D4)",
             "confidence": "n/a",
         }
 
-    # Try known patterns
+    result = {}
+
+    # Try known sequence extensionality patterns (B1)
     for pat in PATTERNS:
         if re.search(pat["regex"], expr):
-            return {
+            result = {
                 "category": pat["name"],
+                "high_level": pat["high_level"],
+                "low_level": pat["low_level"],
+                "sub_pattern": pat.get("sub_pattern", ""),
                 "pattern": pat["desc"],
                 "confidence": "high",
                 "match": "pattern",
             }
+            break
 
-    # Model-based diagnosis for other equalities
+    # Always try model-based diagnosis when model available
+    model_diagnosis = None
     if model:
-        diagnosis = diagnose_from_model(assertion, model)
-        if diagnosis:
-            return diagnosis
+        model_diagnosis = diagnose_from_model(assertion, model)
 
-    # Unknown equality — flag with available info
-    return {
-        "category": "unknown-equality",
-        "reason": "no pattern match, model analysis needed",
-        "confidence": "low",
-        "expr": expr,
-    }
+    if model_diagnosis:
+        if result:
+            # Pattern matched AND model confirmed — attach model evidence
+            result["model_evidence"] = model_diagnosis.get("details", {})
+            result["model_confirms"] = model_diagnosis["category"]
+        else:
+            # No pattern match, use model diagnosis
+            result = model_diagnosis
+    elif not result:
+        # No pattern, no model evidence
+        result = {
+            "category": "unknown-equality",
+            "high_level": "unknown",
+            "low_level": "unknown",
+            "reason": "no pattern match" + (", model inconclusive" if model else ", no model"),
+            "confidence": "low",
+            "expr": expr,
+        }
+
+    return result
 
 
 def diagnose_from_model(assertion: dict, model: dict) -> dict | None:
@@ -498,7 +583,9 @@ def diagnose_from_model(assertion: dict, model: dict) -> dict | None:
                     "missing_equality": f"Seq#Take result ({list(take_produces)}) ≠ Seq#Append result ({list(append_produces)}) despite same length ({length})",
                 }
                 return {
-                    "category": "sequence-equality-gap",
+                    "category": "B1-seq-extensionality",
+                    "high_level": "B-missing-axioms",
+                    "low_level": "B1-seq-extensionality",
                     "confidence": "high",
                     "match": "model",
                     "details": details,
@@ -508,6 +595,8 @@ def diagnose_from_model(assertion: dict, model: dict) -> dict | None:
     if seq_funcs:
         return {
             "category": "unknown-equality-with-model",
+            "high_level": "unknown",
+            "low_level": "unknown",
             "confidence": "medium",
             "match": "model-inconclusive",
             "details": details,
@@ -651,6 +740,86 @@ def process_problem(problem_name: str, ablate_only: bool = False,
     return report
 
 
+def diagnose_problem(problem_name: str, model_timeout: int = 60) -> dict:
+    """Run diagnosis on existing ablation results. No re-ablation."""
+    problem_dir = RESULTS_DIR / problem_name
+    ablation_path = problem_dir / "ablation" / "results.json"
+    if not ablation_path.exists():
+        return {"problem": problem_name, "error": "no ablation results"}
+
+    print(f"\n{'='*60}")
+    print(f"Diagnosing: {problem_name}")
+    print(f"{'='*60}")
+
+    t0 = time.time()
+    ablation = json.loads(ablation_path.read_text())
+    assertions = ablation.get("results", [])
+    essential = [a for a in assertions if a.get("essential")]
+
+    if not essential:
+        report = {
+            "problem": problem_name,
+            "total_assertions": len(assertions),
+            "essential_count": 0,
+            "non_essential_count": len(assertions),
+            "diagnoses": [],
+            "elapsed": 0,
+        }
+        (problem_dir / "fast_report.json").write_text(json.dumps(report, indent=2))
+        return report
+
+    print(f"  {len(essential)} essential assertions ({sum(1 for a in essential if a.get('is_equality'))} equality)")
+
+    diagnoses = []
+    for a in essential:
+        print(f"  Diagnosing [{a.get('index', '?')}]: {a.get('text', '')[:60]}...")
+
+        model = None
+        if a.get("is_equality"):
+            try:
+                model = get_model_for_assertion(problem_dir, a, timeout=model_timeout)
+                if model:
+                    nfunc = len(model.get("functions", {}))
+                    nstate = len(model.get("states", []))
+                    print(f"    Model: {nfunc} functions, {nstate} states")
+                else:
+                    print(f"    No model extracted")
+            except subprocess.TimeoutExpired:
+                print(f"    Model extraction timed out")
+            except Exception as e:
+                print(f"    Model extraction failed: {e}")
+
+        diagnosis = classify_assertion(a, model)
+        diagnosis["assertion"] = a.get("text", "")
+        diagnosis["line"] = a.get("line", 0)
+        diagnosis["index"] = a.get("index", 0)
+        diagnoses.append(diagnosis)
+
+        cat = diagnosis["category"]
+        conf = diagnosis.get("confidence", "?")
+        print(f"    -> {cat} (confidence: {conf})")
+
+    elapsed = round(time.time() - t0, 1)
+
+    report = {
+        "problem": problem_name,
+        "total_assertions": len(assertions),
+        "essential_count": len(essential),
+        "non_essential_count": len(assertions) - len(essential),
+        "diagnoses": diagnoses,
+        "summary": {"by_category": {}},
+        "elapsed": elapsed,
+    }
+    for d in diagnoses:
+        cat = d["category"]
+        report["summary"]["by_category"].setdefault(cat, 0)
+        report["summary"]["by_category"][cat] += 1
+
+    (problem_dir / "fast_report.json").write_text(json.dumps(report, indent=2, default=str))
+    print(f"  Done in {elapsed}s")
+    return report
+
+
 # ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
@@ -671,6 +840,7 @@ def main():
     group.add_argument("--all", action="store_true", help="All verified problems")
     parser.add_argument("--workers", type=int, default=1, help="Parallel workers (default: 1)")
     parser.add_argument("--ablate-only", action="store_true", help="Only run ablation, skip model/diagnosis")
+    parser.add_argument("--diagnose-only", action="store_true", help="Only run diagnosis on existing ablation results")
     parser.add_argument("--skip-done", action="store_true", help="Skip problems with existing fast_report.json")
     parser.add_argument("--ablation-timeout", type=int, default=30, help="Timeout per ablation run (default: 30s)")
     parser.add_argument("--model-timeout", type=int, default=60, help="Timeout for model extraction (default: 60s)")
@@ -682,19 +852,50 @@ def main():
     else:
         names = args.names
 
-    if args.skip_done:
-        before = len(names)
-        names = [n for n in names if not (RESULTS_DIR / n / "fast_report.json").exists()]
-        skipped = before - len(names)
-        if skipped:
-            print(f"Skipping {skipped} already-diagnosed problems")
-
-    print(f"Processing {len(names)} problems (workers={args.workers}, ablate_only={args.ablate_only})")
+    if args.diagnose_only:
+        # Filter to problems with existing ablation results that have essential assertions
+        names = [n for n in names
+                 if (RESULTS_DIR / n / "ablation" / "results.json").exists()]
+        # Further filter: only problems that have essential assertions
+        filtered = []
+        for n in names:
+            ablation = json.loads((RESULTS_DIR / n / "ablation" / "results.json").read_text())
+            if any(a.get("essential") for a in ablation.get("results", [])):
+                filtered.append(n)
+        names = filtered
+        print(f"Diagnosing {len(names)} problems with essential assertions (workers={args.workers})")
+    else:
+        if args.skip_done:
+            before = len(names)
+            names = [n for n in names if not (RESULTS_DIR / n / "fast_report.json").exists()]
+            skipped = before - len(names)
+            if skipped:
+                print(f"Skipping {skipped} already-diagnosed problems")
+        print(f"Processing {len(names)} problems (workers={args.workers}, ablate_only={args.ablate_only})")
 
     t0 = time.time()
     all_reports = []
 
-    if args.workers == 1:
+    if args.diagnose_only:
+        if args.workers == 1:
+            for name in names:
+                r = diagnose_problem(name, model_timeout=args.model_timeout)
+                all_reports.append(r)
+        else:
+            with ProcessPoolExecutor(max_workers=args.workers) as executor:
+                futures = {
+                    executor.submit(diagnose_problem, name, args.model_timeout): name
+                    for name in names
+                }
+                for future in as_completed(futures):
+                    try:
+                        r = future.result()
+                        all_reports.append(r)
+                    except Exception as e:
+                        name = futures[future]
+                        print(f"  ERROR on {name}: {e}")
+                        all_reports.append({"problem": name, "error": str(e)})
+    elif args.workers == 1:
         for name in names:
             r = process_problem(name, ablate_only=args.ablate_only,
                                 model_timeout=args.model_timeout,
@@ -708,8 +909,13 @@ def main():
                 for name in names
             }
             for future in as_completed(futures):
-                r = future.result()
-                all_reports.append(r)
+                try:
+                    r = future.result()
+                    all_reports.append(r)
+                except Exception as e:
+                    name = futures[future]
+                    print(f"  ERROR on {name}: {e}")
+                    all_reports.append({"problem": name, "error": str(e)})
 
     elapsed = round(time.time() - t0, 1)
 

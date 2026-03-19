@@ -56,7 +56,7 @@ method LoveA(s: string) returns (result: int)
     result := |s|;
     // Witness for CanFormGoodOfLength: numA = count
     assert 0 <= count <= |s|;
-    // REMOVED: assert count <= CountA(s);
+    assert count <= CountA(s);
     assert |s| - count + CountA(s) <= |s|;
     assert 2 * count > |s|;
     // Maximality: range result < k <= |s| is empty since result == |s|
@@ -64,7 +64,7 @@ method LoveA(s: string) returns (result: int)
     result := candidate;
     // Witness for CanFormGoodOfLength: numA = count
     assert 0 <= count <= candidate;
-    assert count <= CountA(s);
+    // REMOVED: assert count <= CountA(s);
     assert candidate - count + CountA(s) <= |s|;
     assert 2 * count > candidate;
 

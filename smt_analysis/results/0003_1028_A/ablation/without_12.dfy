@@ -103,7 +103,7 @@ method FindSquare(n: int, m: int, grid: seq<string>) returns (r: int, c: int)
   }
   if ly < gcr - ghalf {
     RowOutsideHasNoBlack(n, m, grid, gcr, gcc, ghalf, ly);
-    // REMOVED: assert false;
+    assert false;
   }
   assert ly == gcr - ghalf;
 
@@ -138,7 +138,7 @@ method FindSquare(n: int, m: int, grid: seq<string>) returns (r: int, c: int)
   if lx < gcc - ghalf {
     assert !CellInSquare(ly, lx, gcr, gcc, ghalf);
     assert grid[ly][lx] == 'W';
-    assert false;
+    // REMOVED: assert false;
   }
   assert lx == gcc - ghalf;
 

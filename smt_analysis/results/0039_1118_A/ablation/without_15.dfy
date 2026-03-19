@@ -64,7 +64,7 @@ method WaterBuying(queries: seq<(int, int, int)>) returns (results: seq<int>)
       assert ans == n * a;
 
       // Show allOnesCost <= maxTwosCost: difference = (n/2)*(2*a - b) <= 0
-    // REMOVED: assert n / 2 >= 0;
+      assert n / 2 >= 0;
       assert 2 * a - b < 0;
       assert (n / 2) * (2 * a - b) <= 0;
       assert n * a - ((n % 2) * a + (n / 2) * b) == (n / 2) * (2 * a - b);
@@ -75,7 +75,7 @@ method WaterBuying(queries: seq<(int, int, int)>) returns (results: seq<int>)
       assert ans == maxTwosCost;
 
       // Show maxTwosCost <= allOnesCost: difference = (n/2)*(2*a - b) >= 0
-      assert n / 2 >= 0;
+    // REMOVED: assert n / 2 >= 0;
       assert 2 * a - b >= 0;
       assert (n / 2) * (2 * a - b) >= 0;
       assert n * a - ((n % 2) * a + (n / 2) * b) == (n / 2) * (2 * a - b);

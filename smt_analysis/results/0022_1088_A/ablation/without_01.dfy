@@ -47,8 +47,8 @@ method EhabConstruction(x: int) returns (a: int, b: int, found: bool)
     // REMOVED: ensures !ValidPair(ai, b', x)
     // REMOVED: {
     // REMOVED: assert ai % b' == ai;
-        }
-      }
+    // REMOVED: }
+    // REMOVED: }
     }
     ai := ai + 1;
   }

@@ -100,7 +100,7 @@ method PrimeMinister(n: int, a: seq<int>) returns (k: int, coalition: seq<int>)
     totalSum := totalSum + a[i];
     i := i + 1;
   }
-    // REMOVED: assert a[..n] == a;
+  assert a[..n] == a;
 
   // Step 2: Build coalition with all eligible parties
   coalition := [1];
@@ -126,7 +126,7 @@ method PrimeMinister(n: int, a: seq<int>) returns (k: int, coalition: seq<int>)
     }
     j := j + 1;
   }
-  assert a[..n] == a;
+    // REMOVED: assert a[..n] == a;
 
   // Step 3: Check if coalition has strict majority
   if coalSum * 2 > totalSum {

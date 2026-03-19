@@ -140,7 +140,7 @@ method StockArbitraging(n: int, m: int, r: int, s: seq<int>, b: seq<int>) return
             assert kk * (b[jj] - s[ii]) <= shares * (maxB - minS);
     // REMOVED: assert r - shares * minS == r % minS by {
     // REMOVED: assert r == shares * minS + r % minS;
-            }
+    // REMOVED: }
             assert shares * (maxB - minS) == shares * maxB - shares * minS;
             assert r + shares * (maxB - minS) == r - shares * minS + shares * maxB;
             assert r - shares * minS + shares * maxB == r % minS + shares * maxB;

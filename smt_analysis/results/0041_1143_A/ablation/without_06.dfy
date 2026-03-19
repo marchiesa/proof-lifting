@@ -44,7 +44,7 @@ method TheDoors(n: int, doors: seq<int>) returns (k: int)
     }
     i := i + 1;
   }
-    // REMOVED: assert doors[..n] == doors;
+  assert doors[..n] == doors;
 
   var x := 0;
   var y := 0;
@@ -68,7 +68,7 @@ method TheDoors(n: int, doors: seq<int>) returns (k: int)
     assert !CanExitAfter(doors, i + 1);
     i := i + 1;
   }
-  assert doors[..n] == doors;
+    // REMOVED: assert doors[..n] == doors;
   assert CanExitAfter(doors, n);
   return 0;
 }

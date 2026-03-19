@@ -108,7 +108,7 @@ method DecryptRepeatingCipher(t: string, n: int) returns (s: string)
 
     // k < m: otherwise x == TriNum(m) == |t| == n, contradicting loop guard
     assert k < m by {
-    // REMOVED: if k == m { assert x == TriNum(m) == |t|; }
+      if k == m {  }
     }
 
     TriNumSucc(k);

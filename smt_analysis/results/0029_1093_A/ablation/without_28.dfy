@@ -164,7 +164,7 @@ method DiceRolling(x: seq<int>) returns (rolls: seq<int>)
       BuildDiceWitnessSum(extra, (1));
       var dice := BuildDiceWitness(extra, (1));
       assert |dice| == (1);
-    // REMOVED: assert AllValidFaces(dice);
+      assert AllValidFaces(dice);
       assert SumSeq(dice) == (val);
       assert IsCorrectAnswer(val, 1);
     } else {
@@ -199,7 +199,7 @@ method DiceRolling(x: seq<int>) returns (rolls: seq<int>)
       BuildDiceWitnessSum(extra, (r));
       var dice := BuildDiceWitness(extra, (r));
       assert |dice| == (r);
-      assert AllValidFaces(dice);
+    // REMOVED: assert AllValidFaces(dice);
       assert SumSeq(dice) == (val);
       assert IsCorrectAnswer(val, r);
     }

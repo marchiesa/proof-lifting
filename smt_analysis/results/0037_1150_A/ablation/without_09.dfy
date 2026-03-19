@@ -106,7 +106,7 @@ method StockArbitraging(n: int, m: int, r: int, s: seq<int>, b: seq<int>) return
     assert ValidTrade(r, s[minIdx], shares);
     // REMOVED: assert r - shares * minS == r % minS by {
     // REMOVED: assert r == shares * minS + r % minS;
-    }
+    // REMOVED: }
     assert Outcome(r, s[minIdx], b[maxIdx], shares) == maxBourles;
 
     // === Prove IsOptimal ===

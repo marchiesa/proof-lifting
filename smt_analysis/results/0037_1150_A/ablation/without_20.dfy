@@ -100,7 +100,7 @@ method StockArbitraging(n: int, m: int, r: int, s: seq<int>, b: seq<int>) return
 
     // === Prove IsAchievable ===
     assert shares * minS <= r by {
-    // REMOVED: assert r == shares * minS + r % minS;
+      assert r == shares * minS + r % minS;
       assert r % minS >= 0;
     }
     assert ValidTrade(r, s[minIdx], shares);
@@ -139,7 +139,7 @@ method StockArbitraging(n: int, m: int, r: int, s: seq<int>, b: seq<int>) return
             assert shares * (b[jj] - s[ii]) <= shares * (maxB - minS);
             assert kk * (b[jj] - s[ii]) <= shares * (maxB - minS);
             assert r - shares * minS == r % minS by {
-              assert r == shares * minS + r % minS;
+    // REMOVED: assert r == shares * minS + r % minS;
             }
             assert shares * (maxB - minS) == shares * maxB - shares * minS;
             assert r + shares * (maxB - minS) == r - shares * minS + shares * maxB;

@@ -147,7 +147,7 @@ method LongestGoodSubsequence(s: seq<char>, k: int) returns (length: int)
     i := i + 1;
   }
 
-    // REMOVED: assert counts[minIdx] == CountChar(upper[minIdx], s);
+  assert counts[minIdx] == CountChar(upper[minIdx], s);
   assert minCount >= 0;
 
   MulDivK(minCount, k);
@@ -167,7 +167,7 @@ method LongestGoodSubsequence(s: seq<char>, k: int) returns (length: int)
 
   // Postcondition 4
   assert upper[minIdx] == ('A' as int + minIdx) as char;
-  assert counts[minIdx] == CountChar(upper[minIdx], s);
+    // REMOVED: assert counts[minIdx] == CountChar(upper[minIdx], s);
   CountIthDef(minIdx, s);
   assert CountIth(minIdx, s) == minCount;
 

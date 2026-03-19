@@ -214,7 +214,7 @@ method ZoningRestrictions(n: int, h: int, m: int, restrictions: seq<(int, int, i
   {
     OptimalAssignmentIndex(n, h, restrictions, j);
   }
-    // REMOVED: assert ans[..] == opt;
+  assert ans[..] == opt;
 
   // Loop 3: Compute total profit
   ghost var savedAns := ans[..];
@@ -233,7 +233,7 @@ method ZoningRestrictions(n: int, h: int, m: int, restrictions: seq<(int, int, i
 
   assert ans[..n] == ans[..];
   maxProfit := temp;
-  assert ans[..] == opt;
+    // REMOVED: assert ans[..] == opt;
 
   // Prove ensures 1: IsValidAssignment
   forall idx | 0 <= idx < n

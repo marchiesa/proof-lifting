@@ -96,13 +96,13 @@ method DetermineLine(stops: seq<seq<int>>) returns (result: seq<int>)
     // REMOVED: ensures InSeq(x, newResult)
     // REMOVED: {
     // REMOVED: assert forall m | 0 <= m < k :: InSeq(x, stops[m]);
-        assert InSeq(x, result);
-        var ridx :| 0 <= ridx < |result| && result[ridx] == x;
-        assert InSeq(x, stops[k]);
-        assert InSeq(result[ridx], stops[k]);
-        assert InSeq(result[ridx], newResult);
-      }
-    }
+    // REMOVED: assert InSeq(x, result);
+    // REMOVED: var ridx :| 0 <= ridx < |result| && result[ridx] == x;
+    // REMOVED: assert InSeq(x, stops[k]);
+    // REMOVED: assert InSeq(result[ridx], stops[k]);
+    // REMOVED: assert InSeq(result[ridx], newResult);
+    // REMOVED: }
+    // REMOVED: }
 
     result := newResult;
   }

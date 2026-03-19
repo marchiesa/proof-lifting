@@ -103,7 +103,7 @@ method FindSquare(n: int, m: int, grid: seq<string>) returns (r: int, c: int)
   }
   if ly < gcr - ghalf {
     RowOutsideHasNoBlack(n, m, grid, gcr, gcc, ghalf, ly);
-    // REMOVED: assert false;
+    assert false;
   }
   assert ly == gcr - ghalf;
 
@@ -115,7 +115,7 @@ method FindSquare(n: int, m: int, grid: seq<string>) returns (r: int, c: int)
   {
     if ry > gcr + ghalf {
       RowOutsideHasNoBlack(n, m, grid, gcr, gcc, ghalf, ry);
-      assert false;
+    // REMOVED: assert false;
     }
     ry := ry + 1;
   }
