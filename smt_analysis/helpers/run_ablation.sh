@@ -42,6 +42,9 @@ if "0 errors" in raw_output:
     result = "pass"
 elif "parse error" in raw_output.lower() or "not expected in Dafny" in raw_output:
     result = "parse_error"
+# Note: "Model parsing error" was caused by a locale bug in Boogie's model
+# parser (double.TryParse without InvariantCulture). Fixed in our modified
+# Boogie; this branch should no longer trigger.
 elif "Model parsing error" in raw_output or "Could not parse any models" in raw_output:
     result = "prover_error"
 elif "timed out" in raw_output:

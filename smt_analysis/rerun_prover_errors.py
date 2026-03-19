@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Re-run only the prover_error variants using stock dafny verify."""
+"""Re-run only the prover_error variants using stock dafny verify.
+
+NOTE: This script was written to work around a locale bug in our modified
+Boogie's model parser (double.TryParse without InvariantCulture). That bug
+has since been fixed in boogie/Source/Model/Model.cs. This script is no
+longer needed for new ablation runs, but is kept for historical reference.
+"""
 
 import json
 import subprocess

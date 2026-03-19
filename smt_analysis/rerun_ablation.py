@@ -3,8 +3,13 @@
 
 Fixes from the original run:
   1. Handles `assert ... by { ... }` blocks (comments out entire block)
-  2. Rejects parse_error / prover_error as "essential" — only real verification
+  2. Rejects parse_error as "essential" — only real verification
      failures (error or timeout) count.
+
+Note: the prover_error category (from Boogie's model parser crashing on
+counterexamples with "0.0") is no longer possible — that locale bug was
+fixed in our modified Boogie (CultureInfo.InvariantCulture in Model.cs).
+The detection is kept as a safety net but should never trigger.
 
 Usage:
     python3 smt_analysis/rerun_ablation.py [--problems P1 P2 ...] [--parallel N]
@@ -129,7 +134,8 @@ def ablate_problem(problem_dir: Path, timeout: int = 60) -> dict | None:
 
         # Only real verification failures count as essential
         essential = ablation_result in ("error", "timeout")
-        # parse_error and prover_error are bugs in the variant, NOT real failures
+        # parse_error = syntax error in the variant (bug in variant creation)
+        # prover_error = Boogie model parser crash (locale bug, now fixed)
         if ablation_result in ("parse_error", "prover_error"):
             essential = False
 
