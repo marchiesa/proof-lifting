@@ -825,7 +825,13 @@ def diagnose_problem(problem_name: str, model_timeout: int = 60) -> dict:
 # ---------------------------------------------------------------------------
 
 def get_verified_problems() -> list[str]:
-    """Get all problem names that have a verified.dfy."""
+    """Get problem names that actually verify (from verified_problems.txt).
+
+    Falls back to all directories with verified.dfy if the list doesn't exist.
+    """
+    verified_list = RESULTS_DIR / "verified_problems.txt"
+    if verified_list.exists():
+        return sorted(verified_list.read_text().split())
     names = []
     for d in sorted(RESULTS_DIR.iterdir()):
         if d.is_dir() and (d / "verified.dfy").exists():
