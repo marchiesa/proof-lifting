@@ -13,7 +13,7 @@ TIMEOUT="${2:-60}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-DOTNET="/opt/homebrew/Cellar/dotnet@8/8.0.124/libexec/dotnet"
+DOTNET="${DOTNET8:-${DOTNET:-dotnet}}"
 DAFNY_DLL="$BASE_DIR/dafny-source/Binaries/Dafny.dll"
 
 START_TIME=$(python3 -c "import time; print(time.time())")

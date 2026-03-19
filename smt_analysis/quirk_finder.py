@@ -70,7 +70,7 @@ def build_prompt(problem_dir: Path, verify_only: bool = False, analyze_only: boo
             pass
 
     if verify_only:
-        dotnet = "/opt/homebrew/Cellar/dotnet@8/8.0.124/libexec/dotnet"
+        dotnet = os.environ.get("DOTNET8", os.environ.get("DOTNET", "dotnet"))
         dafny_dll = PROJ_ROOT / "dafny-source" / "Binaries" / "Dafny.dll"
         return f"""Make this Dafny program verify. Add loop invariants, assertions, ghost variables,
 and/or lemmas as needed. Do NOT modify the ghost spec (functions, predicates) or the method

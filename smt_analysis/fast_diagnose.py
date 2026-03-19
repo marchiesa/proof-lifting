@@ -31,7 +31,7 @@ PROJ_ROOT = Path(__file__).parent.parent.resolve()
 DATASET_DIR = PROJ_ROOT / "dataset"
 RESULTS_DIR = PROJ_ROOT / "smt_analysis" / "results"
 HELPERS_DIR = PROJ_ROOT / "smt_analysis" / "helpers"
-DOTNET = "/opt/homebrew/Cellar/dotnet@8/8.0.124/libexec/dotnet"
+DOTNET = os.environ.get("DOTNET8", os.environ.get("DOTNET", "dotnet"))
 DAFNY_DLL = PROJ_ROOT / "dafny-source" / "Binaries" / "Dafny.dll"
 BOOGIE_PROJ = PROJ_ROOT / "boogie" / "Source" / "BoogieDriver" / "BoogieDriver.csproj"
 

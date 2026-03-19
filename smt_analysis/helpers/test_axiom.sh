@@ -16,7 +16,7 @@ TIMEOUT="${3:-60}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-DOTNET="/opt/homebrew/Cellar/dotnet@8/8.0.124/libexec/dotnet"
+DOTNET="${DOTNET8:-${DOTNET:-dotnet}}"
 BOOGIE_PROJ="$BASE_DIR/boogie/Source/BoogieDriver/BoogieDriver.csproj"
 
 # Create patched BPL in a temp file
