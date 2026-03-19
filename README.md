@@ -1,66 +1,39 @@
-# Proof Lifting: Dafny → Boogie → SMT → Proof
+# SMT Quirk Analysis Pipeline
 
-Tools for extracting and analyzing proof evidence from the Dafny verification pipeline. The system captures mappings at each stage of compilation (Dafny → Boogie → SMT), enabling reverse lookup from Z3 unsat cores back to Dafny source constructs.
+Automated pipeline for discovering and classifying SMT solver quirks in
+verified Dafny programs. Given a set of competitive programming problems,
+the pipeline generates verified Dafny code, identifies which proof
+assertions are truly needed by the solver (vs. redundant), and classifies
+each essential assertion by the underlying solver limitation.
 
-## Architecture
+## Pipeline Overview
 
 ```
-Dafny source
-    ↓ (AstMappingManager - captures during Boogie generation)
-Boogie IL (with {:id} attributes)
-    ↓ (Namer - captures during SMT linearization)
-SMT-LIB ($generated@@N names)
-    ↓ (Z3)
-Unsat core / Spurious model
-    ↓ (reverse lookup via saved mappings)
-Dafny assertions/invariants / Proof hints
+Step 1: Dataset Generation     (pipeline.py)
+    Codeforces problems → Dafny task.dfy + tests.dfy
+        ↓
+Step 2: Verification           (quirk_finder.py --verify-only)
+    task.dfy → verified.dfy (LLM adds invariants/assertions)
+        ↓
+Step 3: Verification Check     (check_verified.py)
+    verified.dfy → verified_problems.txt (filter to programs that pass)
+        ↓
+Step 4: Lemma Inlining         (inline_lemmas.py)
+    verified.dfy → verified_inlined.dfy (inline non-recursive lemmas)
+        ↓
+Step 5: Ablation               (fast_diagnose.py --ablate-only)
+    Remove each assertion one at a time → find essential assertions
+        ↓
+Step 6: Classification         (fast_diagnose.py --diagnose-only)
+    Extract Z3 models → classify by SMT mechanism (A/B/C/D)
 ```
-
-Both mappings are captured during compilation, not reverse-engineered.
-
-## Components
-
-### Modified Dafny ([marchiesa/dafny@proof-lifting](https://github.com/marchiesa/dafny/tree/proof-lifting))
-
-New `--ast-mapping` flag outputs a JSON file mapping Dafny constructs to Boogie IL:
-
-- Variables: `dafnyName` → `boogieName` → `ssaVersions`
-- Functions: `dafnyName` → `boogieName`
-- Invariants, Assertions, Requires, Ensures, Foralls
-- Full expression AST serialization per assertion (node types, children, variable/function references)
-
-**Key file:** `Source/DafnyCore/Verifier/AstMappingManager.cs` (new)
-
-**Modified files:**
-- `BoogieGenerator.cs` - hooks to capture variable/function mappings
-- `BoogieGenerator.TrLoop.cs` - invariant mapping hooks
-- `BoogieGenerator.Methods.cs` - method context tracking
-- `BoogieGenerator.TrCall.cs`, `TrForallStmt.cs`, `TrPredicateStatement.cs` - additional hooks
-- `VerifyCommand.cs` - `--ast-mapping` CLI flag
-
-### Modified Boogie ([marchiesa/boogie@proof-lifting](https://github.com/marchiesa/boogie/tree/proof-lifting))
-
-New `/nameMap` flag outputs a JSON file mapping `$generated@@N` SMT names back to Boogie identifiers, tracked per-VC (since names are reused after `(reset)`).
-
-**Key files:**
-- `SMTLibLineariser.cs` - captures `Namer.GetQuotedName()` during linearization
-- `SMTLibInteractiveTheoremProver.cs` - saves per-VC mappings at reset boundaries
-- `SMTLibProcessTheoremProver.cs` - `/nameMap` flag and JSON serialization
-- `ProverInterface.cs` - `NamedAssumesSmtNames` dictionary
-
-### Proof Extractor (`proof-extractor/`)
-
-Python pipeline that runs the full chain and extracts proof steps from Z3 unsat cores.
-
-### SMT Analysis (`leonardo-experiments/smt_analysis/`)
-
-Tools for analyzing Z3's behavior on failing VCs, including a CEGAR-style prototype that detects spurious counterexamples and injects proof hints.
 
 ## Prerequisites
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
 - [Z3](https://github.com/Z3Prover/z3) (tested with 4.15.x)
-- Python 3.8+
+- Python 3.10+
+- [Claude Code CLI](https://claude.ai/claude-code) (for steps 1 and 2)
 
 ## Setup
 
@@ -81,11 +54,6 @@ dotnet build Source/Dafny.sln
 cd ..
 ```
 
-> On macOS with multiple .NET versions, use the .NET 8 SDK explicitly:
-> ```bash
-> /opt/homebrew/Cellar/dotnet@8/8.0.124/libexec/dotnet build Source/Dafny.sln
-> ```
-
 ### 3. Clone and build modified Boogie
 
 ```bash
@@ -95,198 +63,262 @@ dotnet build Source/Boogie.sln
 cd ..
 ```
 
-## Usage
-
-### Full pipeline (proof extraction)
+### 4. Set environment
 
 ```bash
-python3 proof-extractor/pipeline.py examples/sum_seq.dfy
-```
+# Point to .NET 8 binary (required if "dotnet" in PATH is not v8)
+export DOTNET8=/path/to/dotnet8
 
-### Step by step
-
-#### Step 1: Dafny → Boogie + AST mapping
-
-```bash
-dotnet dafny-source/Binaries/Dafny.dll verify input.dfy \
-    --ast-mapping ast_mapping.json \
-    --bprint output.bpl
-```
-
-**Output:**
-- `output.bpl` - Boogie intermediate language
-- `ast_mapping.json` - Dafny→Boogie mapping with expression ASTs
-
-#### Step 2: Boogie → SMT + name mapping
-
-```bash
-dotnet boogie/Source/BoogieDriver/bin/Debug/net8.0/BoogieDriver.dll \
-    output.bpl \
-    /proverLog:smt_input.smt2 \
-    /nameMap:name_map.json \
-    /trackVerificationCoverage \
-    /normalizeNames:1
-```
-
-**Output:**
-- `smt_input.smt2` - full SMT-LIB trace sent to Z3
-- `name_map.json` - per-VC mapping of `$generated@@N` → Boogie names
-
-#### Step 3: Run Z3 for unsat cores
-
-```bash
-z3 smt_input.smt2
-```
-
-#### Step 4: Map results back to Dafny
-
-Use `name_map.json` to decode SMT names to Boogie, then `ast_mapping.json` to decode Boogie to Dafny.
-
-### SMT Quirk Analysis Pipeline (`smt_analysis/`)
-
-Automated pipeline to discover and classify SMT solver quirks across the dataset.
-The main script is `smt_analysis/fast_diagnose.py`.
-
-#### Prerequisites
-
-- .NET 8 SDK (set `DOTNET8` env var to the binary path if not in `$PATH`)
-- Modified Dafny built in `dafny-source/` (see Setup above)
-- Modified Boogie built in `boogie/` (see Setup above)
-- Python 3.10+
-
-#### Quick start (reproduce from clone)
-
-```bash
-git clone https://github.com/marchiesa/proof-lifting.git
-cd proof-lifting
-
-# Clone and build Dafny + Boogie (see Setup section above)
-# ...
-
-# Set dotnet 8 path (macOS example)
+# macOS Homebrew example:
 export DOTNET8=/opt/homebrew/Cellar/dotnet@8/8.0.124/libexec/dotnet
+```
 
-# Step 1: Ablation — find essential assertions (95 problems, ~15 min with 5 workers)
+All scripts read `DOTNET8` (falls back to `DOTNET`, then `dotnet` in PATH).
+
+## Running the Pipeline
+
+### Quick start (reproduce results from existing data)
+
+If you just want to reproduce the ablation and classification results
+from the already-committed dataset (95 verified programs):
+
+```bash
+export DOTNET8=/path/to/dotnet8
+
+# Ablation: ~15 min with 5 workers
 python3 smt_analysis/fast_diagnose.py --all --ablate-only --workers 5
 
-# Step 2: Diagnosis — classify essential assertions (~30 min with 5 workers)
+# Classification: ~30 min with 5 workers
 python3 smt_analysis/fast_diagnose.py --all --diagnose-only --workers 5
 ```
 
-Results are written to `smt_analysis/results/{problem}/`:
-- `ablation/results.json` — per-assertion essentiality
-- `ablation/without_NN.dfy` — variant files with each assertion removed
-- `models/assert_NN/boogie_model.txt` — Z3 counterexample models
-- `fast_report.json` — diagnosis with categories
-- `diagnosis_summary.json` — aggregate summary across all problems
+Expected output: 927 assertions, 191 essential, 40 problems with essential.
 
-The list of problems that actually verify is in `smt_analysis/results/verified_problems.txt`
-(95 problems). The pipeline only processes these.
+### Step 1: Dataset Generation
 
-#### Running on specific problems
+Generates Dafny problems from Codeforces. Each problem gets a method body
+with formal spec (pre/postconditions) but no proof annotations.
 
 ```bash
-# Single problem
-python3 smt_analysis/fast_diagnose.py --names 0000_1013_A
-
-# Multiple problems
-python3 smt_analysis/fast_diagnose.py --names 0000_1013_A 0003_1028_A 0009_1041_A
-
-# Full pipeline (ablation + diagnosis) on one problem
-python3 smt_analysis/fast_diagnose.py --names 0000_1013_A
-```
-
-#### Pipeline phases
-
-For each problem, `fast_diagnose.py` runs:
-
-1. **PARSE** — extract `assert` statements from method bodies using the AST mapping
-   (`--ast-mapping` flag on the modified Dafny compiler)
-2. **ABLATE** — remove each assertion one at a time, run `dafny verify`, mark as
-   essential if verification fails. Handles `assert ... by { ... }` blocks as
-   single units.
-3. **MODEL** — for essential equality assertions, run Dafny → Boogie with
-   `/printModel:1` to extract Z3's counterexample model
-4. **DIAGNOSE** — pattern-match assertion text (B1 sub-patterns) and analyze the
-   model to detect sequence extensionality gaps
-5. **REPORT** — write structured `fast_report.json` with categories
-
-#### Dataset generation
-
-```bash
-# Generate 100 problems from Codeforces (rating ≤ 1600)
 python3 pipeline.py --start 0 --count 100 --workers 10 --max-rating 1600
 ```
 
-#### Verification (add invariants/assertions to make `dafny verify` pass)
+**Requires:** Claude Code CLI (spawns one Claude instance per problem).
+
+**Input:** `codeforces_data/problems.json`, `codeforces_data/python_submissions.json`
+
+**Output per problem** (`dataset/{NNN}_{problem_id}/`):
+- `task.dfy` — Dafny method + formal spec (no invariants/assertions)
+- `tests.dfy` — runtime tests for implementation and spec
+
+### Step 2: Verification
+
+An LLM adds proof annotations (loop invariants, assertions, ghost
+variables, lemmas) to make `dafny verify` pass.
 
 ```bash
+# Verify all unverified problems
 python3 smt_analysis/quirk_finder.py --all --verify-only --workers 5 --skip-verified
+
+# Verify specific problems
+python3 smt_analysis/quirk_finder.py --names 0000_1013_A --verify-only
 ```
 
-#### Check which problems actually verify
+**Requires:** Claude Code CLI.
+
+**Output per problem** (`smt_analysis/results/{problem}/`):
+- `verified.dfy` — annotated program that passes `dafny verify`
+- `verify_result.json` — verification status and timing
+
+### Step 3: Verification Check
+
+Not all `verified.dfy` files actually verify (LLM may have false-positive
+results, or the modified Dafny compiler may behave differently). This step
+filters to only programs that cleanly pass.
 
 ```bash
 python3 smt_analysis/check_verified.py
-# Outputs: smt_analysis/results/verified_problems.txt
 ```
 
-### CEGAR-style proof hint discovery
+**Output:**
+- `smt_analysis/results/verified_problems.txt` — list of problem IDs that pass
+- `smt_analysis/results/verification_status.json` — full results per problem
 
-When Z3 returns `unknown` (verification fails), the spurious model can be analyzed to discover missing proof hints:
+All subsequent steps only process problems in `verified_problems.txt`.
+
+### Step 4: Lemma Inlining
+
+Non-recursive lemmas are essentially packaged assertions. Inlining them
+makes ablation more granular: individual assertions within the lemma body
+can be tested instead of the opaque lemma call.
 
 ```bash
-cd leonardo-experiments/smt_analysis
-python3 cegar_prototype.py failing_vc.smt2
+# Inline for all verified problems
+python3 smt_analysis/inline_lemmas.py --all --workers 5
+
+# Dry run (show what would be inlined)
+python3 smt_analysis/inline_lemmas.py --all --dry-run
+
+# Specific problems
+python3 smt_analysis/inline_lemmas.py --names 0006_1017_A
 ```
 
-This parses Z3's candidate model, finds pairs of sequence terms that should be equal but aren't (detected via same-length heuristic + different function values), and suggests `Seq#Equal` hints to inject.
+**Output:** `smt_analysis/results/{problem}/verified_inlined.dfy`
 
-## Mapping Formats
+The script re-verifies after inlining and only keeps changes that pass.
+If `verified_inlined.dfy` exists, the ablation pipeline uses it instead
+of `verified.dfy`.
 
-### AST Mapping (Dafny → Boogie)
+### Step 5: Ablation
 
-```json
-{
-  "methods": [{
-    "name": "ComputeSum",
-    "variables": {
-      "sum": {"dafnyName": "sum", "boogieName": "sum#0", "ssaVersions": ["sum#0"]}
-    },
-    "invariants": [{
-      "boogieId": "id18",
-      "text": "sum == Sum(s[..i])",
-      "expressionAst": { ... }
-    }],
-    "ensures": [{"boogieId": "id9", "text": "sum == Sum(s)"}]
-  }],
-  "functions": [{"dafnyName": "Sum", "boogieName": "_module.__default.Sum"}]
-}
+For each assertion in method bodies, create a variant with that assertion
+removed and run `dafny verify`. If verification fails, the assertion is
+**essential** (the solver needs it). If verification passes, it is
+**redundant**.
+
+```bash
+# All problems (~15 min with 5 workers)
+python3 smt_analysis/fast_diagnose.py --all --ablate-only --workers 5
+
+# Specific problems
+python3 smt_analysis/fast_diagnose.py --names 0000_1013_A 0003_1028_A --ablate-only
 ```
 
-### Name Map (Boogie → SMT)
+**How it works:**
+1. Generates an AST mapping (`--ast-mapping`) using the modified Dafny compiler
+2. Extracts `assert` statements from method bodies (not lemma bodies, not invariants)
+3. For each assertion, comments it out and runs `dafny verify` with 60s timeout
+4. Handles `assert ... by { ... }` blocks as single units
+5. Handles inline assertions (e.g., `if x { assert false; }`) by surgical text removal
+6. Rejects parse errors and prover errors as non-essential
 
-```json
-{
-  "variables": {"$generated@@593": "_module.__default.segmentSum", "$generated@@379": "Seq#Take"},
-  "assertions": {"$generated@@1825": "assert$$id13$maintained"},
-  "perVc": [
-    {
-      "vc": 3,
-      "variables": {"$generated@@1808": "i#0", "$generated@@1809": "nums#0"}
-    }
-  ]
-}
+**Output per problem:**
+- `ablation/results.json` — per-assertion essentiality (`essential: true/false`)
+- `ablation/without_NN.dfy` — variant files with each assertion removed
+- `fast_report.json` — summary with essential/non-essential counts
+
+### Step 6: Classification
+
+For each essential equality assertion, extract Z3's counterexample model
+and classify the assertion by the underlying SMT mechanism.
+
+```bash
+# All problems (~30 min with 5 workers)
+python3 smt_analysis/fast_diagnose.py --all --diagnose-only --workers 5
+
+# Specific problems
+python3 smt_analysis/fast_diagnose.py --names 0000_1013_A --diagnose-only
 ```
 
-## Example: The `segmentSum` case
+**How it works:**
+1. For each essential equality assertion, runs Dafny → Boogie with `--bprint`
+   on the variant (without that assertion)
+2. Runs Boogie with `/printModel:1` to extract Z3's counterexample model
+3. Pattern-matches assertion text against known B1 sub-patterns
+   (take-full, take-append, take-of-take, etc.)
+4. Analyzes the model for sequence extensionality gaps
+   (same-length sequences with different object identity)
+5. Non-equality assertions are flagged for manual classification
 
-See `leonardo-experiments/smt_analysis/` for a detailed analysis of why `assert nums[..i+1][..i] == nums[..i]` is needed for Z3 to verify a simple sum method. The analysis includes:
+**Output per problem:**
+- `fast_report.json` — updated with `diagnoses` array (category per assertion)
+- `models/assert_NN/boogie_model.txt` — raw Z3 counterexample models
 
-- Side-by-side Boogie IL comparison (with/without assert)
-- Decoded SMT-LIB traces showing the exact VC formulas
-- Z3's spurious counterexample model (assigns `segmentSum` values that differ by 1)
-- CEGAR prototype that automatically discovers the missing `Seq#Equal` hint
+**Global output:**
+- `smt_analysis/results/diagnosis_summary.json` — aggregate categories across all problems
+
+### Running the Full Pipeline (steps 5+6 together)
+
+```bash
+# Without --ablate-only or --diagnose-only, both phases run sequentially
+python3 smt_analysis/fast_diagnose.py --names 0000_1013_A
+```
+
+## Output Structure
+
+```
+smt_analysis/results/
+    verified_problems.txt          # 95 problems that actually verify
+    verification_status.json       # per-problem verification status
+    diagnosis_summary.json         # aggregate classification results
+
+    {problem_name}/
+        verified.dfy               # annotated program (from step 2)
+        verified_inlined.dfy       # with lemmas inlined (from step 4)
+        verify_result.json         # verification status
+
+        artifacts/
+            ast_mapping.json       # Dafny → Boogie mapping
+            output.bpl             # Boogie IL
+            dafny_output.txt       # compiler output
+
+        ablation/
+            results.json           # per-assertion essentiality
+            without_00.dfy         # variant without assertion 0
+            without_01.dfy         # variant without assertion 1
+            ...
+
+        models/
+            assert_00/
+                boogie_model.txt   # Z3 counterexample model
+                dafny_output.txt
+            ...
+
+        fast_report.json           # diagnosis with categories
+```
+
+## Current Results
+
+- **95** verified programs (from 208 Codeforces problems)
+- **927** total assertions in method bodies
+- **191** essential assertions across **40** programs (21%)
+- **736** redundant assertions (79%)
+
+Automated classification categories:
+- B1 sequence extensionality: 34 (pattern-matched) + 13 (model-confirmed) = 47
+- Flagged (non-equality, needs manual A/C/D classification): 98
+- Unknown equality with model: 48
+- Unknown equality: 11
+
+## Proof Lifting (Dafny → Boogie → SMT mapping)
+
+The pipeline uses modified Dafny and Boogie compilers that capture mappings
+at each compilation stage:
+
+```
+Dafny source  →  Boogie IL  →  SMT-LIB  →  Z3
+   (--ast-mapping)  (/nameMap)
+```
+
+### Modified Dafny ([marchiesa/dafny@proof-lifting](https://github.com/marchiesa/dafny/tree/proof-lifting))
+
+`--ast-mapping output.json` maps Dafny constructs to Boogie:
+variables, functions, invariants, assertions (with full expression ASTs).
+
+Key file: `Source/DafnyCore/Verifier/AstMappingManager.cs`
+
+### Modified Boogie ([marchiesa/boogie@proof-lifting](https://github.com/marchiesa/boogie/tree/proof-lifting))
+
+`/nameMap:output.json` maps `$generated@@N` SMT names back to Boogie
+identifiers, tracked per-VC (names are reused after `(reset)`).
+
+Key files: `SMTLibLineariser.cs`, `SMTLibInteractiveTheoremProver.cs`
+
+### Running the mapping chain directly
+
+```bash
+# Step 1: Dafny → Boogie + AST mapping
+$DOTNET8 dafny-source/Binaries/Dafny.dll verify input.dfy \
+    --ast-mapping ast_mapping.json --bprint output.bpl
+
+# Step 2: Boogie → SMT + name mapping
+$DOTNET8 boogie/Source/BoogieDriver/bin/Debug/net8.0/BoogieDriver.dll \
+    output.bpl /proverLog:smt_input.smt2 /nameMap:name_map.json \
+    /trackVerificationCoverage /normalizeNames:1
+
+# Step 3: Z3
+z3 smt_input.smt2
+```
 
 ## Base Commits
 
