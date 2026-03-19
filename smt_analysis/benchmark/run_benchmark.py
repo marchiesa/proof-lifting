@@ -45,7 +45,7 @@ DAFNY = os.environ.get("DOTNET8", os.environ.get("DOTNET", "dotnet"))
 DAFNY_DLL = os.environ.get("DAFNY_DLL", "Dafny.dll")
 Z3_PATH = os.environ.get("Z3_PATH", None)
 TIMEOUT_PER_PROBLEM = 500  # seconds
-MAX_TOKENS = 16384
+MAX_TOKENS = 4096  # safe default; prompt + completion must fit in context (8192)
 VERIFY_TIMEOUT = 60  # seconds per dafny verify call
 
 

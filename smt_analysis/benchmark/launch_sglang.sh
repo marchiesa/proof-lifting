@@ -49,7 +49,7 @@ python -m sglang.launch_server \
     --port $PORT \
     --tp 4 \
     --mem-fraction-static 0.88 \
-    --context-length 8192 \
+    --context-length 16384 \
     --max-running-requests 64 \
     --log-level warning \
     2>&1 &
