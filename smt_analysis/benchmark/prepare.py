@@ -15,7 +15,9 @@ Usage:
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -123,11 +125,17 @@ def prepare_problem(problem_name: str) -> dict | None:
     (out_dir / "stripped.dfy").write_text(stripped)
     (out_dir / "prompt.txt").write_text(prompt)
 
-    # Copy reference AST mapping (for spec comparison during benchmark)
-    ref_ast = problem_dir / "artifacts" / "ast_mapping.json"
-    if ref_ast.exists():
-        import shutil
-        shutil.copy2(ref_ast, out_dir / "reference_ast.json")
+    # Generate fresh reference AST mapping (needs modified Dafny with body serialization)
+    dotnet = os.environ.get("DOTNET8", os.environ.get("DOTNET", "dotnet"))
+    dafny_dll = os.environ.get("DAFNY_DLL",
+        str(PROJ_ROOT / "dafny-source" / "Binaries" / "Dafny.dll"))
+    ref_ast_path = out_dir / "reference_ast.json"
+    subprocess.run(
+        [dotnet, dafny_dll, "verify", str(source_file),
+         "--ast-mapping", str(ref_ast_path),
+         "--verification-time-limit", "60"],
+        capture_output=True, text=True, timeout=120,
+    )
 
     meta = {
         "problem": problem_name,

@@ -171,7 +171,7 @@ def extract_code(response: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 def extract_spec_from_ast(ast: dict) -> dict:
-    """Extract formal spec from AST mapping: functions, method signatures."""
+    """Extract formal spec from AST mapping: functions, method signatures, body."""
     spec = {}
     spec["functions"] = sorted(
         [f["dafnyName"] for f in ast.get("functions", [])]
@@ -183,9 +183,43 @@ def extract_spec_from_ast(ast: dict) -> dict:
             "requires": [r["text"] for r in m.get("requires", [])],
             "ensures": [e["text"] for e in m.get("ensures", [])],
             "invariants": [inv["text"] for inv in m.get("invariants", [])],
+            "bodyStatements": m.get("bodyStatements", []),
         })
     spec["methods"] = methods
     return spec
+
+
+def _normalize_stmt(s: dict) -> str:
+    """Normalize a body statement to a comparable string (type + text + children)."""
+    parts = [s.get("type", ""), s.get("text", "") or ""]
+    for child in s.get("children") or []:
+        parts.append(_normalize_stmt(child))
+    return "|".join(parts)
+
+
+def _body_matches(original: list, candidate: list) -> tuple[bool, str]:
+    """Check that method body statements are identical (excluding asserts).
+
+    The AST serializer already excludes assert/assume statements, so
+    the remaining body tree must be exactly the same. Any extra variable
+    declarations, changed assignments, modified control flow, etc. are
+    rejected.
+    """
+    orig_normalized = [_normalize_stmt(s) for s in original]
+    cand_normalized = [_normalize_stmt(s) for s in candidate]
+
+    if len(orig_normalized) != len(cand_normalized):
+        return False, f"statement count {len(orig_normalized)} vs {len(cand_normalized)}"
+
+    for i, (o, c) in enumerate(zip(orig_normalized, cand_normalized)):
+        if o != c:
+            otype = original[i].get('type', '?')
+            otext = (original[i].get('text') or '')[:50]
+            ctype = candidate[i].get('type', '?')
+            ctext = (candidate[i].get('text') or '')[:50]
+            return False, f"statement {i} differs: {otype}:{otext} vs {ctype}:{ctext}"
+
+    return True, "body matches"
 
 
 def compare_specs(original_ast_path: Path, candidate_ast_path: Path) -> tuple[bool, str]:
@@ -227,6 +261,13 @@ def compare_specs(original_ast_path: Path, candidate_ast_path: Path) -> tuple[bo
             return False, f"Method {name}: ensures differ"
         if om["invariants"] != cm["invariants"]:
             return False, f"Method {name}: invariants differ"
+        # Body check: original statements must be a subtree of candidate
+        orig_body = om.get("bodyStatements", [])
+        cand_body = cm.get("bodyStatements", [])
+        if orig_body:
+            body_ok, body_msg = _body_matches(orig_body, cand_body)
+            if not body_ok:
+                return False, f"Method {name}: body changed — {body_msg}"
 
     added = set(cand_methods.keys()) - set(orig_methods.keys())
     added_fns = cand_fns - orig_fns
