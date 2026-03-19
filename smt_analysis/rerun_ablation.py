@@ -1,31 +1,45 @@
 #!/usr/bin/env python3
 """Re-run ablation across all problems using fixed extract/create logic.
 
-Fixes from the original run:
-  1. Handles `assert ... by { ... }` blocks (comments out entire block)
-  2. Rejects parse_error as "essential" — only real verification
-     failures (error or timeout) count.
-
-Note: the prover_error category (from Boogie's model parser crashing on
-counterexamples with "0.0") is no longer possible — that locale bug was
-fixed in our modified Boogie (CultureInfo.InvariantCulture in Model.cs).
-The detection is kept as a safety net but should never trigger.
+Before ablating, each verified.dfy is checked to ensure it actually passes
+verification. Problems whose verified.dfy does not verify are skipped
+(their ablation results would be meaningless — every variant would show
+"error" regardless of which assertion was removed).
 
 Usage:
-    python3 smt_analysis/rerun_ablation.py [--problems P1 P2 ...] [--parallel N]
+    python3 smt_analysis/rerun_ablation.py [--problems P1 P2 ...] [--timeout N]
+    python3 smt_analysis/rerun_ablation.py --skip-precheck  # skip verification pre-check
 """
 
 import argparse
 import json
 import subprocess
-import sys
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 PROJ_ROOT = Path(__file__).parent.parent.resolve()
 RESULTS_DIR = PROJ_ROOT / "smt_analysis" / "results"
 ABLATION_SH = PROJ_ROOT / "smt_analysis" / "helpers" / "run_ablation.sh"
+
+
+# ---------------------------------------------------------------------------
+# Pre-check: verify that verified.dfy actually passes verification
+# ---------------------------------------------------------------------------
+
+def precheck_verified(dfy_path: Path, timeout: int = 60) -> dict:
+    """Run dafny verify on the original file. Return {result, errors}."""
+    try:
+        proc = subprocess.run(
+            ["bash", str(ABLATION_SH), str(dfy_path), str(timeout)],
+            capture_output=True, text=True, timeout=timeout + 60,
+        )
+        try:
+            data = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            data = {"result": "parse_error", "raw_output": proc.stdout[:500]}
+    except subprocess.TimeoutExpired:
+        data = {"result": "timeout"}
+    return data
 
 # ---------------------------------------------------------------------------
 # Assert extraction (same logic as fixed ablate_and_diagnose.py)
@@ -109,14 +123,36 @@ def run_one_variant(variant_path: Path, timeout: int = 60) -> dict:
 # Ablate one problem
 # ---------------------------------------------------------------------------
 
-def ablate_problem(problem_dir: Path, timeout: int = 60) -> dict | None:
-    """Run ablation on a single problem. Returns results dict or None."""
+def ablate_problem(problem_dir: Path, timeout: int = 60,
+                   skip_precheck: bool = False) -> dict | None:
+    """Run ablation on a single problem. Returns results dict or None.
+
+    Returns None if verified.dfy doesn't exist.
+    Returns a dict with "skipped": True if the pre-check fails.
+    """
     dfy = problem_dir / "verified.dfy"
     if not dfy.exists():
         return None
 
     ablation_dir = problem_dir / "ablation_rerun"
     ablation_dir.mkdir(parents=True, exist_ok=True)
+
+    # Pre-check: ensure verified.dfy actually verifies before ablating.
+    # Without this, a broken verified.dfy makes every variant look "essential".
+    if not skip_precheck:
+        check = precheck_verified(dfy, timeout)
+        if check["result"] != "pass":
+            summary = {
+                "problem": problem_dir.name,
+                "skipped": True,
+                "skip_reason": f"verified.dfy does not verify: {check['result']}",
+                "skip_errors": check.get("errors", [])[:3],
+                "total": 0,
+                "essential_count": 0,
+                "results": [],
+            }
+            (ablation_dir / "results.json").write_text(json.dumps(summary, indent=2))
+            return summary
 
     asserts = extract_asserts(dfy)
     if not asserts:
@@ -135,8 +171,7 @@ def ablate_problem(problem_dir: Path, timeout: int = 60) -> dict | None:
         # Only real verification failures count as essential
         essential = ablation_result in ("error", "timeout")
         # parse_error = syntax error in the variant (bug in variant creation)
-        # prover_error = Boogie model parser crash (locale bug, now fixed)
-        if ablation_result in ("parse_error", "prover_error"):
+        if ablation_result == "parse_error":
             essential = False
 
         results.append({
@@ -168,8 +203,9 @@ def ablate_problem(problem_dir: Path, timeout: int = 60) -> dict | None:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--problems", nargs="*", help="Specific problem dirs to run")
-    parser.add_argument("--parallel", type=int, default=4, help="Parallel workers")
     parser.add_argument("--timeout", type=int, default=60, help="Per-verification timeout")
+    parser.add_argument("--skip-precheck", action="store_true",
+                        help="Skip the verification pre-check (not recommended)")
     args = parser.parse_args()
 
     if args.problems:
@@ -180,20 +216,29 @@ def main():
             if d.is_dir() and (d / "verified.dfy").exists()
         )
 
-    print(f"Running ablation on {len(problem_dirs)} problems (parallel={args.parallel}, timeout={args.timeout}s)")
+    print(f"Running ablation on {len(problem_dirs)} problems (timeout={args.timeout}s)")
+    if not args.skip_precheck:
+        print("Pre-check enabled: verified.dfy will be checked before ablation")
 
     all_summaries = []
+    skipped_problems = []
     total_essential = 0
     total_asserts = 0
     problems_with_essential = 0
 
     for i, pdir in enumerate(problem_dirs):
         t0 = time.time()
-        summary = ablate_problem(pdir, args.timeout)
+        summary = ablate_problem(pdir, args.timeout,
+                                 skip_precheck=args.skip_precheck)
         elapsed = time.time() - t0
 
         if summary is None:
             print(f"[{i+1:3d}/{len(problem_dirs)}] {pdir.name}: no verified.dfy, skipped")
+            continue
+
+        if summary.get("skipped"):
+            skipped_problems.append(summary)
+            print(f"[{i+1:3d}/{len(problem_dirs)}] {pdir.name}: SKIPPED — {summary['skip_reason']}")
             continue
 
         n_ess = summary["essential_count"]
@@ -210,14 +255,17 @@ def main():
         for r in summary["results"]:
             if r["essential"]:
                 print(f"    line {r['line']}: {r['text'][:90]}")
-            elif r["ablation_result"] in ("parse_error", "prover_error"):
-                print(f"    line {r['line']}: SKIPPED ({r['ablation_result']}) {r['text'][:70]}")
+            elif r["ablation_result"] == "parse_error":
+                print(f"    line {r['line']}: SKIPPED (parse_error) {r['text'][:70]}")
 
         all_summaries.append(summary)
 
     # Write global summary
     global_summary = {
         "total_problems": len(problem_dirs),
+        "problems_ablated": len(all_summaries),
+        "problems_skipped": len(skipped_problems),
+        "skipped_list": [s["problem"] for s in skipped_problems],
         "problems_with_essential": problems_with_essential,
         "total_asserts": total_asserts,
         "total_essential": total_essential,
@@ -231,6 +279,8 @@ def main():
     out_path.write_text(json.dumps(global_summary, indent=2))
     print(f"\n=== TOTALS ===")
     print(f"Problems: {len(problem_dirs)}")
+    print(f"Skipped (verified.dfy broken): {len(skipped_problems)}")
+    print(f"Ablated: {len(all_summaries)}")
     print(f"Problems with essential asserts: {problems_with_essential}")
     print(f"Total asserts: {total_asserts}")
     print(f"Essential asserts: {total_essential}")
