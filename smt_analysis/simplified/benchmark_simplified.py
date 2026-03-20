@@ -261,7 +261,8 @@ def run_type(type_name: str, example_dir: Path, output_dir: Path,
 
         # Exact match with ground truth
         orig_assertion = meta.get("source_assertion", "").strip()
-        ad["exact_match"] = (ad.get("assertion_added", "").rstrip(";").strip()
+        added = ad.get("assertion_added") or ""
+        ad["exact_match"] = (added.rstrip(";").strip()
                              == orig_assertion.rstrip(";").strip())
 
         result["attempts"].append(ad)
