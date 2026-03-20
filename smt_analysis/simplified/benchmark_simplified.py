@@ -40,7 +40,7 @@ _CHAT_TEMPLATE = os.environ.get("BENCHMARK_CHAT_TEMPLATE", (
     "<|start|>user<|message|>{user}<|end|>"
     "<|start|>assistant<|channel|>final<|message|>"
 ))
-_EXTRA_STOP = os.environ.get("BENCHMARK_STOP_TOKENS", "<|end|>").split("|")
+_EXTRA_STOP = os.environ.get("BENCHMARK_STOP_TOKENS", "").split("|")
 _EXTRA_STOP = [s for s in _EXTRA_STOP if s]
 
 
