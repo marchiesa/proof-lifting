@@ -55,39 +55,49 @@ VERIFY_TIMEOUT = 60  # seconds per dafny verify call
 
 SYSTEM_MSG = "You are a Dafny verification expert. Output only code, no explanations."
 
-# gpt-oss chat template (from llama.cpp log)
-GPT_OSS_TEMPLATE = (
+# Model config from env (set by launch.sh) or defaults for gpt-oss
+_CHAT_API = os.environ.get("BENCHMARK_CHAT_API", "false").lower() == "true"
+_CHAT_TEMPLATE = os.environ.get("BENCHMARK_CHAT_TEMPLATE", (
     "<|start|>system<|message|>{system}<|end|>"
     "<|start|>user<|message|>{user}<|end|>"
     "<|start|>assistant<|channel|>final<|message|>"
-)
-
-
-def _format_chat(prompt: str) -> str:
-    """Apply gpt-oss chat template to a prompt."""
-    return GPT_OSS_TEMPLATE.format(system=SYSTEM_MSG, user=prompt)
+))
+_EXTRA_STOP = os.environ.get("BENCHMARK_STOP_TOKENS", "<|end|>").split("|")
+_EXTRA_STOP = [s for s in _EXTRA_STOP if s]
 
 
 def call_sglang(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
                 temperature: float = 0.7) -> dict:
-    """Call SGLang /generate endpoint with manual chat template."""
+    """Call SGLang. Uses /v1/chat/completions if chat_api is true,
+    otherwise /generate with manual chat template."""
     import urllib.request
 
-    formatted = _format_chat(prompt)
-    payload = json.dumps({
-        "text": formatted,
-        "sampling_params": {
-            "max_new_tokens": max_tokens,
+    if _CHAT_API:
+        payload = json.dumps({
+            "model": "default",
+            "messages": [
+                {"role": "system", "content": SYSTEM_MSG},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": max_tokens,
             "temperature": temperature,
-            "stop": ["</DAFNY_CODE>", "<|end|>"],
-        },
-    }).encode("utf-8")
+            "stop": ["</DAFNY_CODE>"] + _EXTRA_STOP,
+        }).encode("utf-8")
+        api_url = f"{url}/v1/chat/completions"
+    else:
+        formatted = _CHAT_TEMPLATE.format(system=SYSTEM_MSG, user=prompt)
+        payload = json.dumps({
+            "text": formatted,
+            "sampling_params": {
+                "max_new_tokens": max_tokens,
+                "temperature": temperature,
+                "stop": ["</DAFNY_CODE>"] + _EXTRA_STOP,
+            },
+        }).encode("utf-8")
+        api_url = f"{url}/generate"
 
-    req = urllib.request.Request(
-        f"{url}/generate",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-    )
+    req = urllib.request.Request(api_url, data=payload,
+                                 headers={"Content-Type": "application/json"})
 
     t0 = time.perf_counter()
     try:
@@ -100,15 +110,22 @@ def call_sglang(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
         return {"text": "", "tokens": 0, "time": 0, "error": str(e)}
 
     elapsed = time.perf_counter() - t0
-    text = result.get("text", "")
-    meta = result.get("meta_info", {})
+
+    if _CHAT_API:
+        choices = result.get("choices", [])
+        text = choices[0].get("message", {}).get("content", "") if choices else ""
+        usage = result.get("usage", {})
+        tokens = usage.get("completion_tokens", 0)
+        prompt_tokens = usage.get("prompt_tokens", 0)
+    else:
+        text = result.get("text", "")
+        meta = result.get("meta_info", {})
+        tokens = meta.get("completion_tokens", 0)
+        prompt_tokens = meta.get("prompt_tokens", 0)
 
     return {
-        "text": text,
-        "tokens": meta.get("completion_tokens", 0),
-        "prompt_tokens": meta.get("prompt_tokens", 0),
-        "time": round(elapsed, 2),
-        "raw": result,
+        "text": text, "tokens": tokens, "prompt_tokens": prompt_tokens,
+        "time": round(elapsed, 2), "raw": result,
     }
 
 
@@ -118,7 +135,7 @@ def call_llama(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
     import urllib.request
 
     payload = json.dumps({
-        "model": "gpt-oss",
+        "model": "default",
         "messages": [
             {"role": "system", "content": SYSTEM_MSG},
             {"role": "user", "content": prompt},
@@ -154,8 +171,7 @@ def call_llama(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
         "text": text,
         "tokens": usage.get("completion_tokens", 0),
         "prompt_tokens": usage.get("prompt_tokens", 0),
-        "time": round(elapsed, 2),
-        "raw": result,
+        "time": round(elapsed, 2), "raw": result,
     }
 
 
@@ -415,7 +431,7 @@ def run_problem(problem_name: str, inputs_dir: Path, output_dir: Path,
         "problem": problem_name,
         "essential_count": meta["essential_count"],
         "backend": backend,
-        "model": "gpt-oss-20b",
+        "model": os.environ.get("BENCHMARK_MODEL", "unknown"),
         "temperature": temperature,
         "start_time": datetime.now().isoformat(),
         "attempts": [],
@@ -599,7 +615,7 @@ def main():
     summary = {
         "timestamp": datetime.now().isoformat(),
         "backend": args.backend,
-        "model": "gpt-oss-20b",
+        "model": os.environ.get("BENCHMARK_MODEL", "unknown"),
         "total_problems": len(all_results),
         "successes": successes,
         "failures": len(all_results) - successes,

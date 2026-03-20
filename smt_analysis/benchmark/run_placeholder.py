@@ -40,6 +40,16 @@ VERIFY_TIMEOUT = 60
 
 SYSTEM_MSG = "You are a Dafny verification expert. Output only the requested JSON, no explanations."
 
+# Model config from env (set by launch.sh) or defaults for gpt-oss
+_CHAT_API = os.environ.get("BENCHMARK_CHAT_API", "false").lower() == "true"
+_CHAT_TEMPLATE = os.environ.get("BENCHMARK_CHAT_TEMPLATE", (
+    "<|start|>system<|message|>{system}<|end|>"
+    "<|start|>user<|message|>{user}<|end|>"
+    "<|start|>assistant<|channel|>final<|message|>"
+))
+_EXTRA_STOP = os.environ.get("BENCHMARK_STOP_TOKENS", "<|end|>").split("|")
+_EXTRA_STOP = [s for s in _EXTRA_STOP if s]
+
 
 def _find_assert_end(lines: list, start: int) -> int:
     """Find end line (inclusive) of an assert statement starting at `start`."""
@@ -63,13 +73,6 @@ def _find_assert_end(lines: list, start: int) -> int:
             return j
         j += 1
     return min(j, len(lines) - 1)
-
-GPT_OSS_TEMPLATE = (
-    "<|start|>system<|message|>{system}<|end|>"
-    "<|start|>user<|message|>{user}<|end|>"
-    "<|start|>assistant<|channel|>final<|message|>"
-)
-
 
 # ---------------------------------------------------------------------------
 # Placeholder generation
@@ -297,26 +300,29 @@ def call_llm(url: str, prompt: str, backend: str,
     """Call LLM (SGLang or llama.cpp). Returns {text, tokens, time, error}."""
     import urllib.request
 
-    if backend == "sglang":
-        formatted = GPT_OSS_TEMPLATE.format(system=SYSTEM_MSG, user=prompt)
+    if backend == "sglang" and not _CHAT_API:
+        # Use /generate with manual chat template (e.g., gpt-oss)
+        formatted = _CHAT_TEMPLATE.format(system=SYSTEM_MSG, user=prompt)
         payload = json.dumps({
             "text": formatted,
             "sampling_params": {
                 "max_new_tokens": max_tokens,
                 "temperature": temperature,
-                "stop": ["<|end|>"],
+                "stop": _EXTRA_STOP,
             },
         }).encode("utf-8")
         api_url = f"{url}/generate"
     else:
+        # Use /v1/chat/completions (llama.cpp or SGLang with chat_api=true)
         payload = json.dumps({
-            "model": "gpt-oss",
+            "model": "default",
             "messages": [
                 {"role": "system", "content": SYSTEM_MSG},
                 {"role": "user", "content": prompt},
             ],
             "max_tokens": max_tokens,
             "temperature": temperature,
+            "stop": _EXTRA_STOP if _EXTRA_STOP else None,
         }).encode("utf-8")
         api_url = f"{url}/v1/chat/completions"
 
@@ -335,7 +341,7 @@ def call_llm(url: str, prompt: str, backend: str,
 
     elapsed = time.perf_counter() - t0
 
-    if backend == "sglang":
+    if backend == "sglang" and not _CHAT_API:
         text = result.get("text", "")
         meta = result.get("meta_info", {})
         tokens = meta.get("completion_tokens", 0)
@@ -396,7 +402,7 @@ def run_problem(problem_name: str, inputs_dir: Path, output_dir: Path,
         "problem": problem_name,
         "essential_count": len(placeholders),
         "backend": backend,
-        "model": "gpt-oss-20b",
+        "model": os.environ.get("BENCHMARK_MODEL", "unknown"),
         "mode": "placeholder",
         "temperature": temperature,
         "start_time": datetime.now().isoformat(),
@@ -559,7 +565,7 @@ def main():
         "timestamp": datetime.now().isoformat(),
         "mode": "placeholder",
         "backend": args.backend,
-        "model": "gpt-oss-20b",
+        "model": os.environ.get("BENCHMARK_MODEL", "unknown"),
         "total_problems": len(all_results),
         "successes": successes,
         "failures": len(all_results) - successes,
