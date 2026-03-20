@@ -111,14 +111,44 @@ def call_llm(url: str, prompt: str, backend: str,
 # Code extraction + verification
 # ---------------------------------------------------------------------------
 
-def extract_code(response: str) -> str | None:
+def extract_code(response: str, stripped_code: str | None = None) -> str | None:
+    """Extract code from LLM response. If the response is just an assertion,
+    insert it into the stripped code at the placeholder location."""
+    # Strategy 1: DAFNY_CODE tags or markdown
     for pattern in [r'<DAFNY_CODE>\s*(.*?)(?:</DAFNY_CODE>|$)',
                     r'```dafny\s*(.*?)\s*```', r'```\s*(.*?)\s*```']:
         m = re.search(pattern, response, re.DOTALL | re.IGNORECASE)
         if m:
             return m.group(1).strip()
+
+    # Strategy 2: Full program in response
     if "method " in response or "function " in response or "lemma " in response:
         return response.strip()
+
+    # Strategy 3: Response contains just an assert statement — insert into stripped code
+    if stripped_code:
+        # Find "// REMOVED: ..." lines in stripped code
+        removed_lines = [l for l in stripped_code.split("\n") if "// REMOVED:" in l]
+
+        # Find assert statements in the response
+        assertions = []
+        for line in response.split("\n"):
+            line = line.strip()
+            if line.startswith("assert ") and ";" in line:
+                assertions.append(line)
+        if not assertions:
+            m = re.search(r'(assert\s+.+?;)', response)
+            if m:
+                assertions.append(m.group(1))
+
+        if assertions and removed_lines:
+            result = stripped_code
+            for removed_line, assertion in zip(removed_lines, assertions):
+                indent = len(removed_line) - len(removed_line.lstrip())
+                result = result.replace(removed_line, " " * indent + assertion, 1)
+            if result != stripped_code:
+                return result
+
     return None
 
 
@@ -235,7 +265,7 @@ def run_type(type_name: str, example_dir: Path, output_dir: Path,
             time.sleep(5)
             continue
 
-        code = extract_code(llm["text"])
+        code = extract_code(llm["text"], stripped)
         ad["extracted_code"] = code
 
         if not code:
@@ -243,6 +273,7 @@ def run_type(type_name: str, example_dir: Path, output_dir: Path,
             ad["dafny_success"] = False
             result["attempts"].append(ad)
             dafny_error = "Could not extract code. Return the complete program inside <DAFNY_CODE> tags."
+            time.sleep(2)
             continue
 
         ok, output, vtime = verify(code, tmp)
