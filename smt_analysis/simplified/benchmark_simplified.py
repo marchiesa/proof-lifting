@@ -29,7 +29,7 @@ DOTNET = os.environ.get("DOTNET8", os.environ.get("DOTNET", "dotnet"))
 DAFNY_DLL = os.environ.get("DAFNY_DLL", "Dafny.dll")
 Z3_PATH = os.environ.get("Z3_PATH", None)
 TIMEOUT_PER_TYPE = 300  # seconds
-MAX_TOKENS = 2048
+MAX_TOKENS = 8192  # reasoning models need budget for thinking + code
 VERIFY_TIMEOUT = 30
 
 SYSTEM_MSG = "You are a Dafny verification expert. Output only code, no explanations."
@@ -91,19 +91,34 @@ def call_llm(url: str, prompt: str, backend: str,
 
     elapsed = time.perf_counter() - t0
 
+    reasoning = ""
+
     if backend == "sglang" and not _CHAT_API:
-        text = result.get("text", "")
+        raw_text = result.get("text", "")
+        # Extract reasoning from <|channel|>analysis sections
+        import re as _re
+        analysis_match = _re.search(r'<\|channel\|>analysis<\|message\|>(.*?)(?:<\|channel\|>|<\|end\|>|$)',
+                                     raw_text, _re.DOTALL)
+        if analysis_match:
+            reasoning = analysis_match.group(1).strip()
+        # Extract final content
+        final_match = _re.search(r'<\|channel\|>final<\|message\|>(.*?)(?:<\|end\|>|$)',
+                                  raw_text, _re.DOTALL)
+        text = final_match.group(1).strip() if final_match else raw_text
         meta = result.get("meta_info", {})
         tokens = meta.get("completion_tokens", 0)
         prompt_tokens = meta.get("prompt_tokens", 0)
     else:
         choices = result.get("choices", [])
-        text = choices[0].get("message", {}).get("content", "") if choices else ""
+        msg = choices[0].get("message", {}) if choices else {}
+        text = msg.get("content", "")
+        reasoning = msg.get("reasoning_content", "")
         usage = result.get("usage", {})
         tokens = usage.get("completion_tokens", 0)
         prompt_tokens = usage.get("prompt_tokens", 0)
 
-    return {"text": text, "tokens": tokens, "prompt_tokens": prompt_tokens,
+    return {"text": text, "reasoning": reasoning,
+            "tokens": tokens, "prompt_tokens": prompt_tokens,
             "time": round(elapsed, 2)}
 
 
@@ -254,6 +269,7 @@ def run_type(type_name: str, example_dir: Path, output_dir: Path,
         llm = call_llm(url, prompt, backend, temperature=temperature)
 
         ad["llm_response"] = llm["text"]
+        ad["llm_reasoning"] = llm.get("reasoning", "")
         ad["llm_tokens"] = llm.get("tokens", 0)
         ad["llm_time"] = llm.get("time", 0)
         result["total_tokens"] += llm.get("tokens", 0)

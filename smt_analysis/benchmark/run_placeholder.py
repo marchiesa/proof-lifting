@@ -341,19 +341,31 @@ def call_llm(url: str, prompt: str, backend: str,
 
     elapsed = time.perf_counter() - t0
 
+    reasoning = ""
+
     if backend == "sglang" and not _CHAT_API:
-        text = result.get("text", "")
+        raw_text = result.get("text", "")
+        analysis_match = re.search(r'<\|channel\|>analysis<\|message\|>(.*?)(?:<\|channel\|>|<\|end\|>|$)',
+                                    raw_text, re.DOTALL)
+        if analysis_match:
+            reasoning = analysis_match.group(1).strip()
+        final_match = re.search(r'<\|channel\|>final<\|message\|>(.*?)(?:<\|end\|>|$)',
+                                 raw_text, re.DOTALL)
+        text = final_match.group(1).strip() if final_match else raw_text
         meta = result.get("meta_info", {})
         tokens = meta.get("completion_tokens", 0)
         prompt_tokens = meta.get("prompt_tokens", 0)
     else:
         choices = result.get("choices", [])
-        text = choices[0].get("message", {}).get("content", "") if choices else ""
+        msg = choices[0].get("message", {}) if choices else {}
+        text = msg.get("content", "")
+        reasoning = msg.get("reasoning_content", "")
         usage = result.get("usage", {})
         tokens = usage.get("completion_tokens", 0)
         prompt_tokens = usage.get("prompt_tokens", 0)
 
-    return {"text": text, "tokens": tokens, "prompt_tokens": prompt_tokens,
+    return {"text": text, "reasoning": reasoning,
+            "tokens": tokens, "prompt_tokens": prompt_tokens,
             "time": round(elapsed, 2)}
 
 

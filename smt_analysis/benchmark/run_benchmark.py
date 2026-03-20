@@ -45,7 +45,7 @@ DAFNY = os.environ.get("DOTNET8", os.environ.get("DOTNET", "dotnet"))
 DAFNY_DLL = os.environ.get("DAFNY_DLL", "Dafny.dll")
 Z3_PATH = os.environ.get("Z3_PATH", None)
 TIMEOUT_PER_PROBLEM = 500  # seconds
-MAX_TOKENS = 4096  # safe default; prompt + completion must fit in context (8192)
+MAX_TOKENS = 8192  # reasoning models need budget for thinking + code
 VERIFY_TIMEOUT = 60  # seconds per dafny verify call
 
 
@@ -111,20 +111,33 @@ def call_sglang(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
 
     elapsed = time.perf_counter() - t0
 
+    reasoning = ""
+
     if _CHAT_API:
         choices = result.get("choices", [])
-        text = choices[0].get("message", {}).get("content", "") if choices else ""
+        msg = choices[0].get("message", {}) if choices else {}
+        text = msg.get("content", "")
+        reasoning = msg.get("reasoning_content", "")
         usage = result.get("usage", {})
         tokens = usage.get("completion_tokens", 0)
         prompt_tokens = usage.get("prompt_tokens", 0)
     else:
-        text = result.get("text", "")
+        raw_text = result.get("text", "")
+        # Extract reasoning from <|channel|>analysis sections
+        analysis_match = re.search(r'<\|channel\|>analysis<\|message\|>(.*?)(?:<\|channel\|>|<\|end\|>|$)',
+                                    raw_text, re.DOTALL)
+        if analysis_match:
+            reasoning = analysis_match.group(1).strip()
+        final_match = re.search(r'<\|channel\|>final<\|message\|>(.*?)(?:<\|end\|>|$)',
+                                 raw_text, re.DOTALL)
+        text = final_match.group(1).strip() if final_match else raw_text
         meta = result.get("meta_info", {})
         tokens = meta.get("completion_tokens", 0)
         prompt_tokens = meta.get("prompt_tokens", 0)
 
     return {
-        "text": text, "tokens": tokens, "prompt_tokens": prompt_tokens,
+        "text": text, "reasoning": reasoning,
+        "tokens": tokens, "prompt_tokens": prompt_tokens,
         "time": round(elapsed, 2), "raw": result,
     }
 
@@ -164,11 +177,13 @@ def call_llama(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
     elapsed = time.perf_counter() - t0
 
     choices = result.get("choices", [])
-    text = choices[0].get("message", {}).get("content", "") if choices else ""
+    msg = choices[0].get("message", {}) if choices else {}
+    text = msg.get("content", "")
+    reasoning = msg.get("reasoning_content", "")
     usage = result.get("usage", {})
 
     return {
-        "text": text,
+        "text": text, "reasoning": reasoning,
         "tokens": usage.get("completion_tokens", 0),
         "prompt_tokens": usage.get("prompt_tokens", 0),
         "time": round(elapsed, 2), "raw": result,
@@ -463,6 +478,7 @@ def run_problem(problem_name: str, inputs_dir: Path, output_dir: Path,
         llm_result = call_fn(url, prompt, temperature=temperature)
 
         attempt_data["llm_response"] = llm_result["text"]
+        attempt_data["llm_reasoning"] = llm_result.get("reasoning", "")
         attempt_data["llm_tokens"] = llm_result.get("tokens", 0)
         attempt_data["llm_prompt_tokens"] = llm_result.get("prompt_tokens", 0)
         attempt_data["llm_time"] = llm_result.get("time", 0)
