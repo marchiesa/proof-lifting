@@ -117,7 +117,7 @@ python -m sglang.launch_server \
     2>&1 &
 SERVER_PID=$!
 
-for i in $(seq 1 180); do
+for i in $(seq 1 360); do
     if curl -s "http://127.0.0.1:$PORT/health" > /dev/null 2>&1; then
         echo "Server ready after $((i * 10))s"
         break
@@ -130,7 +130,7 @@ for i in $(seq 1 180); do
 done
 
 if ! curl -s "http://127.0.0.1:$PORT/health" > /dev/null 2>&1; then
-    echo "ERROR: Server not ready after 30 min"
+    echo "ERROR: Server not ready after 60 min"
     kill $SERVER_PID 2>/dev/null
     exit 1
 fi
