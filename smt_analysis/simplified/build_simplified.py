@@ -319,23 +319,24 @@ def pass2_ablation(code: str, type_name: str) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 def pass3_type_check(code: str, type_name: str, original_text: str) -> tuple[bool, str]:
-    """Pass 3: Check the simplified example has the same quirk type."""
-    # Find assert in the code
+    """Pass 3: Check the simplified example has at least one assert of the target type."""
+    found_types = []
     for line in code.split("\n"):
         stripped = line.strip()
         if stripped.startswith("assert "):
-            detected_type = classify_assertion(stripped)
-            if detected_type == type_name:
+            detected = classify_assertion(stripped)
+            if detected:
+                found_types.append(detected)
+            if detected == type_name:
                 return True, f"type matches: {type_name}"
-            elif detected_type:
-                return False, f"type mismatch: expected {type_name}, got {detected_type}"
 
-    # If pattern matching doesn't catch it, use a looser check
-    # For B1 types, check for sequence operations
+    if found_types:
+        return False, f"type mismatch: expected {type_name}, found {found_types}"
+
+    # Loose checks for types that patterns may miss
     if type_name.startswith("B1-") and "[.." in code:
         return True, f"sequence operations present (loose match for {type_name})"
 
-    # For A2, check for predicate calls in asserts
     if type_name == "A2-predicate-instantiation":
         for line in code.split("\n"):
             if line.strip().startswith("assert ") and re.search(r"[A-Z]\w+\(", line):
