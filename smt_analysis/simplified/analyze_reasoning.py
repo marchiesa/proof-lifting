@@ -192,45 +192,157 @@ def analyze_model(model_dir: Path) -> dict:
     }
 
 
+def aggregate_runs(model_name: str, run_dirs: list[Path]) -> dict:
+    """Aggregate reasoning analysis across multiple runs."""
+    from collections import Counter, defaultdict
+
+    # Per-type: collect classifications across runs
+    per_type = defaultdict(lambda: {"classifications": [], "successes": [], "reasoning_samples": []})
+
+    for run_dir in run_dirs:
+        report = analyze_model(run_dir)
+        for d in report["details"]:
+            t = d["type"]
+            per_type[t]["classifications"].append(d["classification"])
+            per_type[t]["successes"].append(d["success"])
+            if d.get("reasoning_text"):
+                per_type[t]["reasoning_samples"].append(d["reasoning_text"][:300])
+
+    # Build aggregated report
+    aggregated = {
+        "model": model_name,
+        "n_runs": len(run_dirs),
+        "per_type": {},
+    }
+
+    for t in sorted(per_type.keys()):
+        info = per_type[t]
+        n = len(info["classifications"])
+        class_counts = Counter(info["classifications"])
+        success_count = sum(info["successes"])
+
+        aggregated["per_type"][t] = {
+            "n_runs": n,
+            "success_count": success_count,
+            "success_rate": round(success_count / n, 2) if n else 0,
+            "classification_counts": dict(class_counts),
+            "dominant_classification": class_counts.most_common(1)[0][0] if class_counts else "unknown",
+        }
+
+    return aggregated
+
+
+def print_aggregated(agg: dict):
+    """Print aggregated report."""
+    print(f"\n{'='*60}")
+    print(f"Aggregated: {agg['model']} ({agg['n_runs']} runs)")
+    print(f"{'='*60}")
+
+    for t, info in agg["per_type"].items():
+        status = f"{info['success_count']}/{info['n_runs']} pass"
+        cls = info["classification_counts"]
+        cls_str = ", ".join(f"{v}× {k}" for k, v in sorted(cls.items(), key=lambda x: -x[1]))
+        print(f"  {t}: {status} — [{cls_str}]")
+    print()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Analyze reasoning traces")
-    parser.add_argument("--model", help="Specific model results dir")
+    parser.add_argument("--model", help="Specific model results dir (single run)")
+    parser.add_argument("--aggregate", help="Model name prefix to aggregate (e.g., 'gpt-oss-20b')")
     parser.add_argument("--output", default=None, help="Output JSON path")
     args = parser.parse_args()
 
-    if args.model:
-        model_dirs = [RESULTS_DIR / args.model]
+    if args.aggregate:
+        # Find all run dirs matching the model name
+        run_dirs = sorted([
+            d for d in RESULTS_DIR.iterdir()
+            if d.is_dir() and d.name.startswith(args.aggregate)
+        ])
+        if not run_dirs:
+            print(f"No runs found for '{args.aggregate}' in {RESULTS_DIR}")
+            sys.exit(1)
+
+        print(f"Found {len(run_dirs)} runs for {args.aggregate}:")
+        for d in run_dirs:
+            print(f"  {d.name}")
+
+        if len(run_dirs) == 1:
+            # Single run — just analyze normally
+            report = analyze_model(run_dirs[0])
+            print_report_single(report)
+            all_reports = [report]
+        else:
+            # Multiple runs — aggregate
+            agg = aggregate_runs(args.aggregate, run_dirs)
+            print_aggregated(agg)
+            all_reports = [agg]
+
+            # Also print each individual run
+            for d in run_dirs:
+                report = analyze_model(d)
+                print_report_single(report)
     else:
-        model_dirs = [d for d in sorted(RESULTS_DIR.iterdir()) if d.is_dir()]
+        if args.model:
+            model_dirs = [RESULTS_DIR / args.model]
+        else:
+            # Group by model prefix (before _run)
+            all_dirs = sorted([d for d in RESULTS_DIR.iterdir() if d.is_dir()])
+            # Find unique model prefixes
+            prefixes = {}
+            for d in all_dirs:
+                name = d.name
+                # Strip _runN suffix
+                prefix = re.sub(r'_run\d+$', '', name)
+                prefixes.setdefault(prefix, []).append(d)
 
-    all_reports = []
+            all_reports = []
+            for prefix, dirs in sorted(prefixes.items()):
+                if len(dirs) > 1:
+                    agg = aggregate_runs(prefix, dirs)
+                    print_aggregated(agg)
+                    all_reports.append(agg)
+                else:
+                    report = analyze_model(dirs[0])
+                    print_report_single(report)
+                    all_reports.append(report)
 
-    for model_dir in model_dirs:
-        if not model_dir.is_dir():
-            continue
-        report = analyze_model(model_dir)
-        all_reports.append(report)
+            output_path = Path(args.output) if args.output else RESULTS_DIR / "reasoning_analysis.json"
+            output_path.write_text(json.dumps(all_reports, indent=2, default=str))
+            print(f"Report saved to: {output_path}")
+            return
 
-        print(f"\n{'='*60}")
-        print(f"Model: {report['model']}")
-        print(f"{'='*60}")
-        print(f"Classification: {report['by_classification']}")
-        print()
-
-        for d in report["details"]:
-            status = "PASS" if d["success"] else "FAIL"
-            cls = d["classification"]
-            print(f"  {d['type']}: {status} — {cls}")
-            print(f"    Evidence: {d['evidence']}")
-            if d.get("reasoning_text"):
-                # Show first 150 chars of reasoning
-                preview = d["reasoning_text"][:150].replace("\n", " ")
-                print(f"    Reasoning: {preview}...")
-            print()
+        all_reports = []
+        for model_dir in model_dirs:
+            if not model_dir.is_dir():
+                continue
+            report = analyze_model(model_dir)
+            all_reports.append(report)
+            print_report_single(report)
 
     # Save report
     output_path = Path(args.output) if args.output else RESULTS_DIR / "reasoning_analysis.json"
     output_path.write_text(json.dumps(all_reports, indent=2, default=str))
+    print(f"Report saved to: {output_path}")
+
+
+def print_report_single(report: dict):
+    """Print single-run report."""
+    print(f"\n{'='*60}")
+    print(f"Model: {report['model']}")
+    print(f"{'='*60}")
+    print(f"Classification: {report['by_classification']}")
+    print()
+
+    for d in report["details"]:
+        status = "PASS" if d["success"] else "FAIL"
+        cls = d["classification"]
+        print(f"  {d['type']}: {status} — {cls}")
+        print(f"    Evidence: {d['evidence']}")
+        if d.get("reasoning_text"):
+            preview = d["reasoning_text"][:150].replace("\n", " ")
+            print(f"    Reasoning: {preview}...")
+        print()
     print(f"Report saved to: {output_path}")
 
 

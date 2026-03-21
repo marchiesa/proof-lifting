@@ -25,6 +25,7 @@ MODEL=""
 TP=""
 TIMEOUT=300
 TEMPERATURE=0.7
+RUN_ID=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -32,6 +33,7 @@ while [[ $# -gt 0 ]]; do
         --tp) TP="$2"; shift 2 ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
         --temperature) TEMPERATURE="$2"; shift 2 ;;
+        --run-id) RUN_ID="$2"; shift 2 ;;
         *) echo "Unknown arg: $1"; exit 1 ;;
     esac
 done
@@ -135,7 +137,7 @@ echo "Running simplified benchmark..."
 python3 "$SIMPLIFIED_DIR/benchmark_simplified.py" \
     --url "http://127.0.0.1:$PORT" \
     --backend sglang \
-    --output-dir "$SIMPLIFIED_DIR/results/$MODEL" \
+    --output-dir "$SIMPLIFIED_DIR/results/${MODEL}${RUN_ID:+_run${RUN_ID}}" \
     --timeout $TIMEOUT \
     --temperature $TEMPERATURE
 

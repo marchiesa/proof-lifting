@@ -353,6 +353,7 @@ def main():
     parser.add_argument("--types", nargs="+", help="Specific types to benchmark")
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument("--run-id", default=None, help="Run number (for repeated runs)")
     args = parser.parse_args()
 
     global TIMEOUT_PER_TYPE
@@ -360,7 +361,8 @@ def main():
 
     model = os.environ.get("BENCHMARK_MODEL", "unknown")
     if not args.output_dir:
-        args.output_dir = str(SCRIPT_DIR / "results" / model)
+        suffix = f"_run{args.run_id}" if args.run_id else ""
+        args.output_dir = str(SCRIPT_DIR / "results" / f"{model}{suffix}")
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
