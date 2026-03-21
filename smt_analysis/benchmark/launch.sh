@@ -2,7 +2,7 @@
 #SBATCH --job-name=bench
 #SBATCH --output=/leonardo_work/EUHPC_D29_022/mchiesa0/logs/bench_%j.out
 #SBATCH --error=/leonardo_work/EUHPC_D29_022/mchiesa0/logs/bench_%j.err
-#SBATCH --time=02:00:00
+#SBATCH --time=04:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
@@ -15,9 +15,14 @@
 #
 # Usage:
 #   sbatch --gres=gpu:4 launch.sh --model gpt-oss-20b --mode full
-#   sbatch --gres=gpu:4 launch.sh --model qwen3-coder-next --mode placeholder
-#   sbatch --gres=gpu:1 launch.sh --model goedel-prover-v2-8b --mode full
+#   sbatch --gres=gpu:4 launch.sh --model kimi-dev-72b --mode full --timeout 5000 --tag 5000s
 #   sbatch --gres=gpu:4 launch.sh --model gpt-oss-20b --mode full --names "0000_1013_A 0012_1060_A"
+#
+# Multi-node (10 nodes, each handles a batch):
+#   for i in $(seq 0 9); do
+#     sbatch --gres=gpu:4 launch.sh --model kimi-dev-72b --mode full --timeout 5000 \
+#       --tag 5000s --batch-id $i --num-batches 10
+#   done
 #
 # Arguments:
 #   --model MODEL       Model name (from models.json)
@@ -25,6 +30,9 @@
 #   --names "P1 P2..."  Optional: specific problem names
 #   --workers N         Concurrent problems (default: 8)
 #   --timeout N         Seconds per problem (default: 500)
+#   --tag TAG           Optional: suffix for results dir name
+#   --batch-id ID       This batch index (0-based, for multi-node)
+#   --num-batches N     Total number of batches (for multi-node)
 
 set -e
 
@@ -34,6 +42,9 @@ MODE="full"
 NAMES=""
 WORKERS=8
 TIMEOUT=500
+TAG=""
+BATCH_ID=""
+NUM_BATCHES=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -42,12 +53,15 @@ while [[ $# -gt 0 ]]; do
         --names) NAMES="$2"; shift 2 ;;
         --workers) WORKERS="$2"; shift 2 ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
+        --tag) TAG="$2"; shift 2 ;;
+        --batch-id) BATCH_ID="$2"; shift 2 ;;
+        --num-batches) NUM_BATCHES="$2"; shift 2 ;;
         *) echo "Unknown arg: $1"; exit 1 ;;
     esac
 done
 
 if [ -z "$MODEL" ]; then
-    echo "ERROR: --model required (gpt-oss-20b, qwen3-coder-next, goedel-prover-v2-8b)"
+    echo "ERROR: --model required"
     exit 1
 fi
 
@@ -56,8 +70,11 @@ WORK="/leonardo_work/EUHPC_D29_022/mchiesa0"
 BENCHMARK_DIR="$WORK/benchmark"
 INPUTS_DIR="$BENCHMARK_DIR/inputs"
 MODELS_DIR="$WORK/models"
-RESULTS_DIR="$BENCHMARK_DIR/results_${MODE}_${MODEL}_$(date +%Y%m%d_%H%M%S)"
-PORT=8000
+RESULTS_SUFFIX="${MODE}_${MODEL}"
+[ -n "$TAG" ] && RESULTS_SUFFIX="${RESULTS_SUFFIX}_${TAG}"
+[ -n "$BATCH_ID" ] && RESULTS_SUFFIX="${RESULTS_SUFFIX}_batch${BATCH_ID}"
+RESULTS_DIR="$BENCHMARK_DIR/results_${RESULTS_SUFFIX}_$(date +%Y%m%d_%H%M%S)"
+PORT=$((8000 + (SLURM_JOB_ID % 1000)))
 
 module load python/3.11.7 cuda/12.3
 source "$WORK/software/sglang_env/bin/activate"
@@ -152,8 +169,20 @@ CMD="python3 $SCRIPT \
     --workers $WORKERS \
     --timeout $TIMEOUT"
 
+# If --names specified, use those. Otherwise, if batching, split the problem list.
 if [ -n "$NAMES" ]; then
     CMD="$CMD --names $NAMES"
+elif [ -n "$BATCH_ID" ] && [ -n "$NUM_BATCHES" ]; then
+    # Split manifest problems into batches
+    BATCH_NAMES=$(python3 -c "
+import json
+problems = json.load(open('$INPUTS_DIR/manifest.json'))['problems']
+batch_id, num_batches = $BATCH_ID, $NUM_BATCHES
+batch = [p for i, p in enumerate(problems) if i % num_batches == batch_id]
+print(' '.join(batch))
+")
+    CMD="$CMD --names $BATCH_NAMES"
+    echo "Batch $BATCH_ID/$NUM_BATCHES: $(echo $BATCH_NAMES | wc -w) problems"
 fi
 
 # Pass model-specific config via env vars
