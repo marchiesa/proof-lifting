@@ -31,6 +31,7 @@
 #   --workers N         Concurrent problems (default: 8)
 #   --timeout N         Seconds per problem (default: 500)
 #   --tag TAG           Optional: suffix for results dir name
+#   --exp-id ID         Experiment ID (shared across all runs in one launch)
 #   --run-id N          Run number (for repeated runs with error bars)
 #   --batch-id ID       This batch index (0-based, for multi-node)
 #   --num-batches N     Total number of batches (for multi-node)
@@ -44,6 +45,7 @@ NAMES=""
 WORKERS=8
 TIMEOUT=500
 TAG=""
+EXP_ID=""
 RUN_ID=""
 BATCH_ID=""
 NUM_BATCHES=""
@@ -56,6 +58,7 @@ while [[ $# -gt 0 ]]; do
         --workers) WORKERS="$2"; shift 2 ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
         --tag) TAG="$2"; shift 2 ;;
+        --exp-id) EXP_ID="$2"; shift 2 ;;
         --run-id) RUN_ID="$2"; shift 2 ;;
         --batch-id) BATCH_ID="$2"; shift 2 ;;
         --num-batches) NUM_BATCHES="$2"; shift 2 ;;
@@ -77,7 +80,9 @@ RESULTS_SUFFIX="${MODE}_${MODEL}"
 [ -n "$TAG" ] && RESULTS_SUFFIX="${RESULTS_SUFFIX}_${TAG}"
 [ -n "$RUN_ID" ] && RESULTS_SUFFIX="${RESULTS_SUFFIX}_run${RUN_ID}"
 [ -n "$BATCH_ID" ] && RESULTS_SUFFIX="${RESULTS_SUFFIX}_batch${BATCH_ID}"
-RESULTS_DIR="$BENCHMARK_DIR/results_${RESULTS_SUFFIX}_$(date +%Y%m%d_%H%M%S)"
+# Use exp-id if provided, otherwise generate timestamp
+RESULTS_TS="${EXP_ID:-$(date +%Y%m%d_%H%M%S)}"
+RESULTS_DIR="$BENCHMARK_DIR/results_${RESULTS_SUFFIX}_${RESULTS_TS}"
 PORT=$((8000 + (SLURM_JOB_ID % 1000)))
 
 module load python/3.11.7 cuda/12.3

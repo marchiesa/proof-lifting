@@ -45,61 +45,80 @@ def _load_single_dir(results_dir: Path) -> dict:
     return problems
 
 
-def find_runs(model: str, mode: str, base: Path = RESULTS_BASE) -> list[Path]:
-    """Find result directories for a model/mode, picking latest per run-id.
+def find_runs(model: str, mode: str, base: Path = RESULTS_BASE,
+              exp_id: str | None = None) -> list:
+    """Find result directories for a model/mode experiment.
 
-    For each run-id, if multiple timestamped directories exist, picks the
-    latest one (by directory name sort, since timestamps are YYYYMMDD_HHMMSS).
+    Groups by exp-id (the trailing YYYYMMDD_HHMMSS in the dir name).
+    If --exp-id not specified, picks the latest exp-id.
+    Within an exp-id, groups by run-id and merges batches.
 
-    For batched runs (Kimi), merges all batch dirs for the same run-id into
-    one virtual run by loading results from all batch dirs.
+    Returns list of entries, each either a Path or list[Path] (batched run).
     """
     import re
 
     pattern = f"results_{mode}_{model}"
     all_dirs = sorted([d for d in base.iterdir() if d.is_dir() and d.name.startswith(pattern)])
 
-    # Group by run-id
-    runs = {}  # run_id -> list of dirs (latest timestamp wins, batches merged)
+    # Parse each directory
+    parsed = []  # (dir, run_id, batch_id, exp_id_str)
     for d in all_dirs:
         name = d.name
-        # Extract run-id
         run_match = re.search(r'_run(\d+)', name)
         if not run_match:
-            continue  # skip dirs without explicit _runN (old single runs)
+            continue
         run_id = run_match.group(1)
 
-        # Extract batch-id
         batch_match = re.search(r'_batch(\d+)', name)
         batch_id = batch_match.group(1) if batch_match else None
 
-        # Extract timestamp
         ts_match = re.search(r'_(\d{8}_\d{6})$', name)
-        timestamp = ts_match.group(1) if ts_match else ""
+        exp_ts = ts_match.group(1) if ts_match else ""
 
-        key = (run_id, batch_id)
-        if key not in runs or timestamp > runs[key][1]:
-            runs[key] = (d, timestamp)
+        parsed.append((d, run_id, batch_id, exp_ts))
+
+    if not parsed:
+        return []
+
+    # Find the target exp-id
+    if exp_id:
+        # Exact match
+        filtered = [(d, run_id, batch_id) for d, run_id, batch_id, exp_ts in parsed
+                    if exp_ts == exp_id]
+    else:
+        # Group timestamps within 120s as same experiment
+        from datetime import datetime
+        def parse_ts(ts):
+            try:
+                return datetime.strptime(ts, "%Y%m%d_%H%M%S")
+            except ValueError:
+                return None
+
+        # Sort by timestamp descending (latest first)
+        with_dt = [(d, run_id, batch_id, exp_ts, parse_ts(exp_ts)) for d, run_id, batch_id, exp_ts in parsed]
+        with_dt = [(d, r, b, ts, dt) for d, r, b, ts, dt in with_dt if dt is not None]
+        with_dt.sort(key=lambda x: x[4], reverse=True)
+
+        if not with_dt:
+            return []
+
+        # Start from latest timestamp, include all within 120s window
+        latest_dt = with_dt[0][4]
+        filtered = [(d, run_id, batch_id) for d, run_id, batch_id, ts, dt in with_dt
+                    if abs((dt - latest_dt).total_seconds()) <= 120]
 
     # Group by run-id, merging batches
-    by_run = {}  # run_id -> list of dirs
-    for (run_id, batch_id), (d, ts) in runs.items():
+    by_run = {}
+    for d, run_id, batch_id in filtered:
         by_run.setdefault(run_id, []).append(d)
 
-    # Return one entry per run (for non-batched), or list of batch dirs (for batched)
     result = []
     for run_id in sorted(by_run.keys()):
         dirs = by_run[run_id]
         if len(dirs) == 1:
             result.append(dirs[0])
         else:
-            # Batched run — return all batch dirs as one merged entry
-            result.append(dirs)  # list of dirs
-
-    # Also check if results are organized by model name directly (local committed)
-    model_dir = base / model
-    if model_dir.is_dir() and model_dir not in result:
-        result.append(model_dir)
+            result.append(dirs)
 
     return result
 
@@ -236,6 +255,7 @@ def main():
     parser = argparse.ArgumentParser(description="Aggregate multiple benchmark runs")
     parser.add_argument("--model", help="Model name to find runs for")
     parser.add_argument("--mode", default="full", help="Benchmark mode (full/placeholder)")
+    parser.add_argument("--exp-id", default=None, help="Specific experiment ID (default: latest)")
     parser.add_argument("--dirs", nargs="+", help="Explicit result directories")
     parser.add_argument("--base", default=None, help="Base directory to search")
     parser.add_argument("--output", help="Output JSON path")
@@ -245,7 +265,7 @@ def main():
         run_dirs = [Path(d) for d in args.dirs]
     elif args.model:
         base = Path(args.base) if args.base else RESULTS_BASE
-        run_dirs = find_runs(args.model, args.mode, base)
+        run_dirs = find_runs(args.model, args.mode, base, args.exp_id)
     else:
         print("ERROR: specify --model or --dirs")
         sys.exit(1)
