@@ -65,7 +65,9 @@ def find_runs(model: str, mode: str, base: Path = RESULTS_BASE) -> list[Path]:
         name = d.name
         # Extract run-id
         run_match = re.search(r'_run(\d+)', name)
-        run_id = run_match.group(1) if run_match else "0"
+        if not run_match:
+            continue  # skip dirs without explicit _runN (old single runs)
+        run_id = run_match.group(1)
 
         # Extract batch-id
         batch_match = re.search(r'_batch(\d+)', name)
