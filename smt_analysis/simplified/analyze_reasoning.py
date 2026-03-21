@@ -55,8 +55,6 @@ PATTERN_KEYWORDS = [
     r"helps? (the )?(dafny |)verif",
     r"we need to (add|insert|assert)",
     r"the missing assert",
-    r"REMOVED.*comment",
-    r"the comment (says|indicates)",
 ]
 
 
@@ -86,10 +84,6 @@ def classify_reasoning(reasoning: str, response: str, quirk_type: str) -> dict:
         if matches:
             pattern_hits.extend(matches)
 
-    # Check if the model read the REMOVED comment
-    reads_comment = bool(re.search(r"REMOVED|removed|comment.*(says|indicates|shows)",
-                                    reasoning, re.IGNORECASE))
-
     # Check for actual algebraic steps (e.g., Sum(a[..i+1]) = Sum(a[..i]) + a[i])
     has_algebraic_chain = bool(re.search(
         r"Sum\(.+\)\s*=\s*Sum\(.+\)\s*\+", reasoning)) or bool(re.search(
@@ -101,7 +95,7 @@ def classify_reasoning(reasoning: str, response: str, quirk_type: str) -> dict:
         reasoning, re.IGNORECASE))
 
     derivation_score = len(derivation_hits) + (2 if has_algebraic_chain else 0) + (2 if has_smt_understanding else 0)
-    pattern_score = len(pattern_hits) + (3 if reads_comment else 0)
+    pattern_score = len(pattern_hits)
 
     if derivation_score >= 3 and has_algebraic_chain:
         classification = "derivation"
@@ -109,9 +103,6 @@ def classify_reasoning(reasoning: str, response: str, quirk_type: str) -> dict:
     elif derivation_score > pattern_score and derivation_score >= 2:
         classification = "derivation"
         evidence = f"{len(derivation_hits)} derivation indicators vs {len(pattern_hits)} pattern indicators"
-    elif reads_comment and pattern_score > derivation_score:
-        classification = "comment_reading"
-        evidence = f"Reads REMOVED comment, {len(pattern_hits)} pattern indicators"
     elif pattern_score > 0:
         classification = "pattern_recognition"
         evidence = f"{len(pattern_hits)} pattern indicators, {len(derivation_hits)} derivation indicators"
@@ -126,7 +117,6 @@ def classify_reasoning(reasoning: str, response: str, quirk_type: str) -> dict:
         "pattern_score": pattern_score,
         "derivation_hits": derivation_hits[:5],
         "pattern_hits": pattern_hits[:5],
-        "reads_comment": reads_comment,
         "has_algebraic_chain": has_algebraic_chain,
         "has_smt_understanding": has_smt_understanding,
         "reasoning_length": len(reasoning),
