@@ -10,8 +10,8 @@ method FindWitness(a: seq<int>, v: int) returns (found: bool)
     invariant found ==> exists i :: 0 <= i < |a| && a[i] == v
   {
     if a[j] == v {
-// REMOVED: assert exists i :: 0 <= i < |a| && a[i] == v by {
-// REMOVED: assert a[j] == v;
+// TODO: add assertion here
+// TODO: add assertion here
       }
       found := true;
     }

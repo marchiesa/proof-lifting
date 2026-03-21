@@ -11,7 +11,7 @@ method M(a: seq<int>) returns (s: int)
     invariant 0 <= i <= |a|
     invariant s == Sum(a[..i])
   {
-// REMOVED: assert a[..i+1] == a[..i] + [a[i]];
+// TODO: add assertion here
     s := s + a[i];
     i := i + 1;
   }

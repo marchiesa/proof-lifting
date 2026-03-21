@@ -394,11 +394,11 @@ def process_type(type_name: str, assertions: list[dict],
         lines = code.split("\n")
         for i, line in enumerate(lines):
             if line.strip().startswith("assert "):
-                lines[i] = f"// REMOVED: {line.strip()}"
+                lines[i] = "// TODO: add assertion here"
                 # Handle multiline
                 while i < len(lines) - 1 and ";" not in lines[i]:
                     i += 1
-                    lines[i] = f"// REMOVED: {lines[i].strip()}"
+                    lines[i] = "// TODO: add assertion here"
                 break
         (out_dir / "stripped.dfy").write_text("\n".join(lines))
 

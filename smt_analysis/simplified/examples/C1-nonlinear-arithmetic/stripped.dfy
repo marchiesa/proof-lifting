@@ -4,5 +4,5 @@ method M(n: int) returns (r: int)
   ensures exists d | 2 <= d <= r - 1 :: r % d == 0
 {
   r := n * 6;
-// REMOVED: assert r % 3 == 0;
+// TODO: add assertion here
 }

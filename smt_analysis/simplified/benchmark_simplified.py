@@ -142,8 +142,8 @@ def extract_code(response: str, stripped_code: str | None = None) -> str | None:
 
     # Strategy 3: Response contains just an assert statement — insert into stripped code
     if stripped_code:
-        # Find "// REMOVED: ..." lines in stripped code
-        removed_lines = [l for l in stripped_code.split("\n") if "// REMOVED:" in l]
+        # Find placeholder lines in stripped code
+        removed_lines = [l for l in stripped_code.split("\n") if "// TODO: add assertion here" in l]
 
         # Find assert statements in the response
         assertions = []

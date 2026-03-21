@@ -11,5 +11,5 @@ method Reach(a: int, b: int) returns (c: int)
   ensures Reachable(a, b)
 {
   c := a + 1;
-// REMOVED: assert ValidStep(a, c);
+// TODO: add assertion here
 }

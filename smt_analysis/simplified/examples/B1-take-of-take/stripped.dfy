@@ -6,5 +6,5 @@ lemma SumAppend(a: seq<int>, i: nat)
   requires i < |a|
   ensures Sum(a[..i+1]) == Sum(a[..i]) + a[i]
 {
-// REMOVED: assert a[..i+1][..i] == a[..i];
+// TODO: add assertion here
 }
