@@ -28,8 +28,8 @@ from pathlib import Path
 RESULTS_BASE = Path(__file__).parent / "results"
 
 
-def load_run(results_dir: Path) -> dict:
-    """Load results from one run directory."""
+def _load_single_dir(results_dir: Path) -> dict:
+    """Load results from a single directory."""
     problems = {}
     for d in sorted(results_dir.iterdir()):
         rp = d / "result.json"
@@ -46,18 +46,72 @@ def load_run(results_dir: Path) -> dict:
 
 
 def find_runs(model: str, mode: str, base: Path = RESULTS_BASE) -> list[Path]:
-    """Find all result directories for a model/mode combination."""
+    """Find result directories for a model/mode, picking latest per run-id.
+
+    For each run-id, if multiple timestamped directories exist, picks the
+    latest one (by directory name sort, since timestamps are YYYYMMDD_HHMMSS).
+
+    For batched runs (Kimi), merges all batch dirs for the same run-id into
+    one virtual run by loading results from all batch dirs.
+    """
+    import re
+
     pattern = f"results_{mode}_{model}"
-    # Also check parent dir for Leonardo-style naming
-    dirs = []
-    for d in sorted(base.iterdir()):
-        if d.is_dir() and d.name.startswith(pattern):
-            dirs.append(d)
-    # Also check if results are organized by model name directly
+    all_dirs = sorted([d for d in base.iterdir() if d.is_dir() and d.name.startswith(pattern)])
+
+    # Group by run-id
+    runs = {}  # run_id -> list of dirs (latest timestamp wins, batches merged)
+    for d in all_dirs:
+        name = d.name
+        # Extract run-id
+        run_match = re.search(r'_run(\d+)', name)
+        run_id = run_match.group(1) if run_match else "0"
+
+        # Extract batch-id
+        batch_match = re.search(r'_batch(\d+)', name)
+        batch_id = batch_match.group(1) if batch_match else None
+
+        # Extract timestamp
+        ts_match = re.search(r'_(\d{8}_\d{6})$', name)
+        timestamp = ts_match.group(1) if ts_match else ""
+
+        key = (run_id, batch_id)
+        if key not in runs or timestamp > runs[key][1]:
+            runs[key] = (d, timestamp)
+
+    # Group by run-id, merging batches
+    by_run = {}  # run_id -> list of dirs
+    for (run_id, batch_id), (d, ts) in runs.items():
+        by_run.setdefault(run_id, []).append(d)
+
+    # Return one entry per run (for non-batched), or list of batch dirs (for batched)
+    result = []
+    for run_id in sorted(by_run.keys()):
+        dirs = by_run[run_id]
+        if len(dirs) == 1:
+            result.append(dirs[0])
+        else:
+            # Batched run — return all batch dirs as one merged entry
+            result.append(dirs)  # list of dirs
+
+    # Also check if results are organized by model name directly (local committed)
     model_dir = base / model
-    if model_dir.is_dir():
-        dirs.append(model_dir)
-    return dirs
+    if model_dir.is_dir() and model_dir not in result:
+        result.append(model_dir)
+
+    return result
+
+
+def load_run(results_input) -> dict:
+    """Load results from one run. Input can be a single Path or list of Paths (batched)."""
+    if isinstance(results_input, list):
+        # Batched run — merge all batch dirs
+        problems = {}
+        for d in results_input:
+            problems.update(_load_single_dir(d))
+        return problems
+    else:
+        return _load_single_dir(results_input)
 
 
 def mean(values: list) -> float:
@@ -200,14 +254,18 @@ def main():
 
     print(f"Found {len(run_dirs)} runs:")
     for d in run_dirs:
-        print(f"  {d.name}")
+        if isinstance(d, list):
+            print(f"  batched ({len(d)} dirs): {d[0].name} ...")
+        else:
+            print(f"  {d.name}")
 
     runs = []
     for d in run_dirs:
         r = load_run(d)
         if r:
             runs.append(r)
-            print(f"  {d.name}: {len(r)} problems, {sum(1 for v in r.values() if v['success'])} pass")
+            label = d[0].name if isinstance(d, list) else d.name
+            print(f"  {label}: {len(r)} problems, {sum(1 for v in r.values() if v['success'])} pass")
 
     if len(runs) < 2:
         print(f"\nNeed at least 2 runs to aggregate (found {len(runs)})")
