@@ -133,6 +133,24 @@ def classify_reasoning(reasoning: str, response: str, quirk_type: str) -> dict:
     }
 
 
+def extract_reasoning_from_response(response: str) -> str:
+    """Extract reasoning from response text.
+
+    Some models embed thinking in the response itself using tags like
+    ◁think▷...◁/think▷ or <think>...</think> rather than a separate field.
+    """
+    # Try various thinking tag formats
+    for pattern in [
+        r'◁think▷(.*?)(?:◁/think▷|<DAFNY_CODE>|```)',
+        r'<think>(.*?)(?:</think>|<DAFNY_CODE>|```)',
+        r'<thinking>(.*?)(?:</thinking>|<DAFNY_CODE>|```)',
+    ]:
+        m = re.search(pattern, response, re.DOTALL)
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
 def analyze_model(model_dir: Path) -> dict:
     """Analyze all results for one model."""
     results = []
@@ -157,6 +175,10 @@ def analyze_model(model_dir: Path) -> dict:
 
         reasoning = attempt.get("llm_reasoning", "")
         response = attempt.get("llm_response", "")
+
+        # If no reasoning field, try extracting from response text
+        if not reasoning and response:
+            reasoning = extract_reasoning_from_response(response)
 
         analysis = classify_reasoning(reasoning, response, type_dir.name)
         analysis["type"] = type_dir.name
