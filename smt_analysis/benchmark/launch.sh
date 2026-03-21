@@ -31,6 +31,7 @@
 #   --workers N         Concurrent problems (default: 8)
 #   --timeout N         Seconds per problem (default: 500)
 #   --tag TAG           Optional: suffix for results dir name
+#   --run-id N          Run number (for repeated runs with error bars)
 #   --batch-id ID       This batch index (0-based, for multi-node)
 #   --num-batches N     Total number of batches (for multi-node)
 
@@ -43,6 +44,7 @@ NAMES=""
 WORKERS=8
 TIMEOUT=500
 TAG=""
+RUN_ID=""
 BATCH_ID=""
 NUM_BATCHES=""
 
@@ -54,6 +56,7 @@ while [[ $# -gt 0 ]]; do
         --workers) WORKERS="$2"; shift 2 ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
         --tag) TAG="$2"; shift 2 ;;
+        --run-id) RUN_ID="$2"; shift 2 ;;
         --batch-id) BATCH_ID="$2"; shift 2 ;;
         --num-batches) NUM_BATCHES="$2"; shift 2 ;;
         *) echo "Unknown arg: $1"; exit 1 ;;
@@ -72,6 +75,7 @@ INPUTS_DIR="$BENCHMARK_DIR/inputs"
 MODELS_DIR="$WORK/models"
 RESULTS_SUFFIX="${MODE}_${MODEL}"
 [ -n "$TAG" ] && RESULTS_SUFFIX="${RESULTS_SUFFIX}_${TAG}"
+[ -n "$RUN_ID" ] && RESULTS_SUFFIX="${RESULTS_SUFFIX}_run${RUN_ID}"
 [ -n "$BATCH_ID" ] && RESULTS_SUFFIX="${RESULTS_SUFFIX}_batch${BATCH_ID}"
 RESULTS_DIR="$BENCHMARK_DIR/results_${RESULTS_SUFFIX}_$(date +%Y%m%d_%H%M%S)"
 PORT=$((8000 + (SLURM_JOB_ID % 1000)))
