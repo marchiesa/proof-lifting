@@ -254,10 +254,10 @@ def main():
     args = parser.parse_args()
 
     if args.aggregate:
-        # Find all run dirs matching the model name
+        # Find all _runN dirs matching the model name (exclude old single runs)
         run_dirs = sorted([
             d for d in RESULTS_DIR.iterdir()
-            if d.is_dir() and d.name.startswith(args.aggregate)
+            if d.is_dir() and d.name.startswith(args.aggregate) and "_run" in d.name
         ])
         if not run_dirs:
             print(f"No runs found for '{args.aggregate}' in {RESULTS_DIR}")
@@ -286,13 +286,13 @@ def main():
         if args.model:
             model_dirs = [RESULTS_DIR / args.model]
         else:
-            # Group by model prefix (before _run)
-            all_dirs = sorted([d for d in RESULTS_DIR.iterdir() if d.is_dir()])
+            # Group by model prefix (before _run), only _runN dirs
+            all_dirs = sorted([d for d in RESULTS_DIR.iterdir()
+                              if d.is_dir() and "_run" in d.name])
             # Find unique model prefixes
             prefixes = {}
             for d in all_dirs:
                 name = d.name
-                # Strip _runN suffix
                 prefix = re.sub(r'_run\d+$', '', name)
                 prefixes.setdefault(prefix, []).append(d)
 
