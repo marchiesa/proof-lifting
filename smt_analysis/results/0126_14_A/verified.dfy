@@ -15,7 +15,7 @@ ghost predicate HasStar(grid: seq<string>)
 
 // The result is the sub-rectangle of grid spanning rows [top..bottom) and columns [left..right)
 ghost predicate IsSubRectangle(grid: seq<string>, result: seq<string>,
-                         top: int, bottom: int, left: int, right: int)
+                               top: int, bottom: int, left: int, right: int)
 {
   0 <= top < bottom <= |grid| &&
   0 <= left < right &&
@@ -26,7 +26,7 @@ ghost predicate IsSubRectangle(grid: seq<string>, result: seq<string>,
 
 // Every shaded cell in the entire grid lies within the rectangle [top..bottom) x [left..right)
 ghost predicate ContainsAllShaded(grid: seq<string>,
-                            top: int, bottom: int, left: int, right: int)
+                                  top: int, bottom: int, left: int, right: int)
 {
   forall r | 0 <= r < |grid| ::
     forall c | 0 <= c < |grid[r]| ::
@@ -37,7 +37,7 @@ ghost predicate ContainsAllShaded(grid: seq<string>,
 // For axis-aligned rectangles, this is equivalent to having minimum area among all
 // rectangles that contain every shaded cell.
 ghost predicate TightBounds(grid: seq<string>,
-                      top: int, bottom: int, left: int, right: int)
+                            top: int, bottom: int, left: int, right: int)
 {
   0 <= top < bottom <= |grid| &&
   0 <= left < right &&
@@ -45,7 +45,7 @@ ghost predicate TightBounds(grid: seq<string>,
   // Top edge touches a shaded cell
   (exists c | left <= c < right :: grid[top][c] == '*') &&
   // Bottom edge touches a shaded cell
-  (exists c | left <= c < right :: grid[bottom - 1][c] == '*') &&
+  (exists c {:trigger grid[bottom - 1][c]} | left <= c < right :: grid[bottom - 1][c] == '*') &&
   // Left edge touches a shaded cell
   (exists r | top <= r < bottom :: grid[r][left] == '*') &&
   // Right edge touches a shaded cell
@@ -54,7 +54,7 @@ ghost predicate TightBounds(grid: seq<string>,
 
 // The result is the minimum-cost rectangle cut from the grid containing all shaded cells
 ghost predicate IsMinimalBoundingBox(grid: seq<string>, result: seq<string>,
-                               top: int, bottom: int, left: int, right: int)
+                                     top: int, bottom: int, left: int, right: int)
 {
   IsSubRectangle(grid, result, top, bottom, left, right) &&
   ContainsAllShaded(grid, top, bottom, left, right) &&
@@ -65,11 +65,9 @@ method Letter(grid: seq<string>) returns (result: seq<string>)
   decreases *
   requires Rectangular(grid)
   requires HasStar(grid)
-  ensures exists top | 0 <= top < |grid| ::
-            exists bottom | 0 <= bottom <= |grid| ::
-              exists left | 0 <= left < |grid[0]| ::
-                exists right | 0 <= right <= |grid[0]| ::
-                  IsMinimalBoundingBox(grid, result, top, bottom, left, right)
+  ensures exists  top, bottom, left, right {:trigger IsMinimalBoundingBox(grid, result, top, bottom, left, right)} |
+            0 <= top < |grid| && 0 <= bottom <= |grid| && 0 <= left < |grid[0]| && 0 <= right <= |grid[0]| ::
+            IsMinimalBoundingBox(grid, result, top, bottom, left, right)
 {
   var n := |grid|;
   var m := |grid[0]|;
@@ -79,10 +77,9 @@ method Letter(grid: seq<string>) returns (result: seq<string>)
   var topDone := false;
   while top < n && !topDone
     invariant 0 <= top <= n
-    invariant !topDone ==> forall r | 0 <= r < top :: forall c | 0 <= c < |grid[r]| :: grid[r][c] != '*'
+    invariant forall r, c | 0 <= r < top && 0 <= c < |grid[r]| :: grid[r][c] != '*'
     invariant topDone ==> top < n
     invariant topDone ==> exists c | 0 <= c < |grid[top]| :: grid[top][c] == '*'
-    invariant topDone ==> forall r | 0 <= r < top :: forall c | 0 <= c < |grid[r]| :: grid[r][c] != '*'
     decreases n - top, !topDone
   {
     assert |grid[top]| == m;
@@ -257,7 +254,7 @@ method Letter(grid: seq<string>) returns (result: seq<string>)
   assert ContainsAllShaded(grid, top, bottom, left, right) by {
     forall r | 0 <= r < |grid|
       ensures forall c | 0 <= c < |grid[r]| ::
-        grid[r][c] == '*' ==> (top <= r < bottom && left <= c < right)
+                grid[r][c] == '*' ==> (top <= r < bottom && left <= c < right)
     {
       assert |grid[r]| == m;
       forall c | 0 <= c < |grid[r]|
@@ -274,27 +271,28 @@ method Letter(grid: seq<string>) returns (result: seq<string>)
   }
 
   // === PROVE TIGHTBOUNDS ===
-  assert exists c | 0 <= c < |grid[top]| :: grid[top][c] == '*';
-  assert exists c | 0 <= c < |grid[bot]| :: grid[bot][c] == '*';
-  assert exists r | 0 <= r < n :: grid[r][left] == '*';
-  assert exists r | 0 <= r < n :: grid[r][ri] == '*';
+  // assert exists c | 0 <= c < |grid[top]| :: grid[top][c] == '*';
+  // assert exists c | 0 <= c < |grid[bot]| :: grid[bot][c] == '*';
+  // assert exists r | 0 <= r < n :: grid[r][left] == '*';
+  // assert exists r | 0 <= r < n :: grid[r][ri] == '*';
 
-  assert exists c | left <= c < right :: grid[top][c] == '*' by {
-    var c0 :| 0 <= c0 < |grid[top]| && grid[top][c0] == '*';
-    assert left <= c0 < right;
-  }
-  assert exists c | left <= c < right :: grid[bottom - 1][c] == '*' by {
-    var c0 :| 0 <= c0 < |grid[bot]| && grid[bot][c0] == '*';
-    assert left <= c0 < right;
-  }
-  assert exists r | top <= r < bottom :: grid[r][left] == '*' by {
-    var r0 :| 0 <= r0 < n && grid[r0][left] == '*';
-    assert top <= r0 < bottom;
-  }
-  assert exists r | top <= r < bottom :: grid[r][right - 1] == '*' by {
-    var r0 :| 0 <= r0 < n && grid[r0][ri] == '*';
-    assert top <= r0 < bottom;
-  }
+  // assert exists c | left <= c < right :: grid[top][c] == '*' by {
+  //   var c0 :| 0 <= c0 < |grid[top]| && grid[top][c0] == '*';
+  //   assert left <= c0 < right;
+  // }
+  assert exists c {:trigger grid[bot][c]} | left <= c < right :: grid[bottom - 1][c] == '*';
+  // assert exists c {:trigger grid[bottom - 1][c]} | left <= c < right :: grid[bottom - 1][c] == '*' by {
+  //   var c0 :| 0 <= c0 < |grid[bot]| && grid[bottom - 1][c0] == '*';
+  //   assert left <= c0 < right;
+  // }
+  // assert exists r | top <= r < bottom :: grid[r][left] == '*' by {
+  //   var r0 :| 0 <= r0 < n && grid[r0][left] == '*';
+  //   assert top <= r0 < bottom;
+  // }
+  // assert exists r | top <= r < bottom :: grid[r][right - 1] == '*' by {
+  //   var r0 :| 0 <= r0 < n && grid[r0][ri] == '*';
+  //   assert top <= r0 < bottom;
+  // }
 
   assert forall r | top <= r < bottom :: right <= |grid[r]| by {
     forall r | top <= r < bottom ensures right <= |grid[r]| {
