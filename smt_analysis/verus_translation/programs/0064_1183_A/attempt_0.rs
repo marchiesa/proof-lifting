@@ -22,7 +22,7 @@ fn SumDigits(x: i64) -> (s: i64)
     ensures s as int == DigitSum(x as int)
 {
     let mut s: i64 = 0;
-    let mut tmp: i64 = x;
+    let mut tmp = x;
     while tmp > 0
     {
         s = s + tmp % 10;
@@ -38,8 +38,8 @@ fn NearestInterestingNumber(a: i64) -> (n: i64)
     ensures IsInteresting(n as int)
     ensures forall|k: int| a as int <= k < n as int ==> !IsInteresting(k)
 {
-    let mut n: i64 = a;
-    let mut s: i64 = SumDigits(n);
+    let mut n = a;
+    let mut s = SumDigits(n);
     while s != 18
     {
         n = n + 1;
