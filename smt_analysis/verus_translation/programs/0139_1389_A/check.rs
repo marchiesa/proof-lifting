@@ -2,10 +2,6 @@ use vstd::prelude::*;
 
 verus! {
 
-spec fn abs_int(q: int) -> int {
-    if q >= 0 { q } else { -q }
-}
-
 spec fn gcd(a: int, b: int) -> int
     recommends a > 0 && b >= 0
     decreases b
@@ -32,68 +28,95 @@ spec fn pair_exists(l: int, r: int) -> bool
 }
 
 proof fn product_non_neg(a: int, b: int)
-    requires a >= 0, b >= 0
-    ensures a * b >= 0
+    requires
+        a >= 0,
+        b >= 0,
+    ensures
+        a * b >= 0,
 {
     assume(false);
 }
 
 proof fn sum_divisible(a: int, b: int, g: int)
-    requires g > 0, a % g == 0, b % g == 0
-    ensures (a + b) % g == 0
+    requires
+        g > 0,
+        a % g == 0,
+        b % g == 0,
+    ensures
+        (a + b) % g == 0,
 {
     assume(false);
 }
 
 proof fn diff_divisible(a: int, b: int, g: int)
-    requires g > 0, a % g == 0, b % g == 0
-    ensures (a - b) % g == 0
+    requires
+        g > 0,
+        a % g == 0,
+        b % g == 0,
+    ensures
+        (a - b) % g == 0,
 {
     assume(false);
 }
 
 proof fn multiple_of_multiple(q: int, b: int, g: int)
-    requires g > 0, b % g == 0
-    ensures (q * b) % g == 0
-    decreases abs_int(q)
+    requires
+        g > 0,
+        b % g == 0,
+    ensures
+        (q * b) % g == 0,
+    decreases if q >= 0 { q } else { -q },
 {
     assume(false);
 }
 
 proof fn gcd_divides_both(a: int, b: int)
-    requires a > 0 && b > 0
-    ensures a % gcd(a, b) == 0
-    ensures b % gcd(a, b) == 0
-    decreases b
+    requires
+        a > 0,
+        b > 0,
+    ensures
+        a % gcd(a, b) == 0,
+        b % gcd(a, b) == 0,
+    decreases b,
 {
     assume(false);
 }
 
 proof fn gcd_of_double_reverse(a: int)
-    requires a > 0
-    ensures gcd(2 * a, a) == a
+    requires
+        a > 0,
+    ensures
+        gcd(2 * a, a) == a,
 {
     assume(false);
 }
 
 proof fn gcd_of_doubled(a: int)
-    requires a > 0
-    ensures gcd(a, 2 * a) == a
+    requires
+        a > 0,
+    ensures
+        gcd(a, 2 * a) == a,
 {
     assume(false);
 }
 
 proof fn lcm_lower_bound(x: int, y: int)
-    requires x > 0 && y > x
-    ensures lcm(x, y) >= 2 * x
+    requires
+        x > 0,
+        y > x,
+    ensures
+        lcm(x, y) >= 2 * x,
 {
     assume(false);
 }
 
-fn lcm_problem(l: i64, r: i64) -> (a: i64, b: i64)
-    requires l >= 1
-    ensures a == -1i64 && b == -1i64 || valid_pair(a as int, b as int, l as int, r as int)
-    ensures (a == -1i64 && b == -1i64) <==> !pair_exists(l as int, r as int)
+fn lcm_problem(l: i64, r: i64) -> (result: (i64, i64))
+    requires
+        l >= 1,
+    ensures
+        result.0 == -1i64 && result.1 == -1i64
+            || valid_pair(result.0 as int, result.1 as int, l as int, r as int),
+        (result.0 == -1i64 && result.1 == -1i64) <==> !pair_exists(l as int, r as int),
 {
     if l * 2 > r {
         proof {

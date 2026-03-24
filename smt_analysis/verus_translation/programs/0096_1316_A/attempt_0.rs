@@ -59,7 +59,6 @@ fn GradeAllocation(a: &Vec<i64>, m: i64) -> (score: i64)
         s = s + a[i];
         i = i + 1;
     }
-    proof { assume(false); }
     if s < m {
         s
     } else {

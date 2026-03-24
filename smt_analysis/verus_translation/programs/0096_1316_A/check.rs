@@ -2,10 +2,6 @@ use vstd::prelude::*;
 
 verus! {
 
-spec fn Scores(a: Seq<i64>) -> Seq<int> {
-    a.map_values(|x: i64| x as int)
-}
-
 spec fn Sum(a: Seq<int>) -> int
     decreases a.len()
 {
@@ -50,11 +46,11 @@ fn GradeAllocation(a: &Vec<i64>, m: i64) -> (score: i64)
     requires
         a@.len() > 0,
         m >= 0,
-        ValidScores(Scores(a@), m as int),
+        ValidScores(a@.map_values(|x: i64| x as int), m as int),
     ensures
-        Achievable(Scores(a@), m as int, score as int),
+        Achievable(a@.map_values(|x: i64| x as int), m as int, score as int),
         forall|v: int| score as int < v && v <= m as int ==>
-            !Achievable(Scores(a@), m as int, v),
+            !Achievable(a@.map_values(|x: i64| x as int), m as int, v),
 {
     let mut s: i64 = 0;
     let mut i: usize = 0;
@@ -63,7 +59,6 @@ fn GradeAllocation(a: &Vec<i64>, m: i64) -> (score: i64)
         s = s + a[i];
         i = i + 1;
     }
-    proof { assume(false); }
     if s < m {
         s
     } else {

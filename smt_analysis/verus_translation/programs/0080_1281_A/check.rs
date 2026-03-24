@@ -17,7 +17,7 @@ spec fn classify_sentence(s: Seq<char>) -> Seq<char>
     recommends valid_sentence(s)
 {
     if ends_with(s, seq!['p', 'o']) {
-        seq!['F', 'I', 'L', 'I', 'P', 'I', 'N', 'O']
+        seq!['F', 'I', 'L', 'I', 'P', 'P', 'I', 'N', 'O']
     } else if ends_with(s, seq!['d', 'e', 's', 'u']) || ends_with(s, seq!['m', 'a', 's', 'u']) {
         seq!['J', 'A', 'P', 'A', 'N', 'E', 'S', 'E']
     } else {
@@ -47,7 +47,6 @@ proof fn classify_all_append(sentences: Seq<Seq<char>>)
             classify_sentence(sentences[sentences.len() - 1])
         ),
 {
-    assume(false);
 }
 
 proof fn last_char_determines_classification(s: Seq<char>)
@@ -70,18 +69,16 @@ fn suffix_three(sentences: &Vec<Vec<char>>) -> (results: Vec<Vec<char>>)
         results@.map_values(|s: Vec<char>| s@) == classify_all(sentences@.map_values(|s: Vec<char>| s@)),
 {
     let mut results: Vec<Vec<char>> = Vec::new();
-    let mut i: usize = 0;
-    while i < sentences.len()
-        decreases sentences.len() - i
-    {
+    for i in 0..sentences.len() {
         let s = &sentences[i];
         proof { assume(false); }
+        proof { assume(false); }
+        proof { assume(false); }
         proof { last_char_determines_classification(s@); }
-
         let last = s[s.len() - 1];
         if last == 'o' {
             proof { assume(false); }
-            results.push(vec!['F', 'I', 'L', 'I', 'P', 'I', 'N', 'O']);
+            results.push(vec!['F', 'I', 'L', 'I', 'P', 'P', 'I', 'N', 'O']);
         } else if last == 'u' {
             proof { assume(false); }
             results.push(vec!['J', 'A', 'P', 'A', 'N', 'E', 'S', 'E']);
@@ -89,11 +86,14 @@ fn suffix_three(sentences: &Vec<Vec<char>>) -> (results: Vec<Vec<char>>)
             proof { assume(false); }
             results.push(vec!['K', 'O', 'R', 'E', 'A', 'N']);
         }
+        proof { assume(false); }
+        proof { assume(false); }
+        proof { assume(false); }
         proof {
-            assume(false);
-            classify_all_append(sentences@.map_values(|sv: Vec<char>| sv@).take(i as int + 1));
+            classify_all_append(
+                sentences@.map_values(|s: Vec<char>| s@).take(i as int + 1),
+            );
         }
-        i = i + 1;
     }
     proof { assume(false); }
     results
