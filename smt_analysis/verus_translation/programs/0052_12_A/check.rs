@@ -14,18 +14,24 @@ spec fn symmetric_about_center(grid: Seq<Seq<char>>) -> bool
 }
 
 spec fn checked_so_far(grid: Seq<Seq<char>>, row: int, col: int) -> bool
-    recommends valid_grid(grid)
-    recommends 0 <= row <= 3
-    recommends 0 <= col <= 3
+    recommends
+        valid_grid(grid),
+        0 <= row,
+        row <= 3,
+        0 <= col,
+        col <= 3
 {
     forall|i: int, j: int| (0 <= i < row && 0 <= j < 3) ==>
         (grid[i][j] == 'X' ==> grid[2 - i][2 - j] == 'X')
 }
 
 spec fn checked_row(grid: Seq<Seq<char>>, row: int, col: int) -> bool
-    recommends valid_grid(grid)
-    recommends 0 <= row < 3
-    recommends 0 <= col <= 3
+    recommends
+        valid_grid(grid),
+        0 <= row,
+        row < 3,
+        0 <= col,
+        col <= 3
 {
     forall|j: int| (0 <= j < col) ==>
         (grid[row][j] == 'X' ==> grid[2 - row][2 - j] == 'X')
@@ -33,14 +39,18 @@ spec fn checked_row(grid: Seq<Seq<char>>, row: int, col: int) -> bool
 
 #[verifier::loop_isolation(false)]
 fn super_agent(grid: &Vec<Vec<char>>) -> (symmetric: bool)
-    requires valid_grid(grid@.map_values(|v: Vec<char>| v@))
-    ensures symmetric == symmetric_about_center(grid@.map_values(|v: Vec<char>| v@))
+    requires
+        valid_grid(grid@.map_values(|row: Vec<char>| row@)),
+    ensures
+        symmetric == symmetric_about_center(grid@.map_values(|row: Vec<char>| row@)),
 {
     let mut bad = false;
     let mut i: usize = 0;
-    while i < 3 {
+    while i < 3
+    {
         let mut j: usize = 0;
-        while j < 3 {
+        while j < 3
+        {
             if grid[i][j] == 'X' && grid[2 - i][2 - j] != 'X' {
                 bad = true;
             }
@@ -53,4 +63,4 @@ fn super_agent(grid: &Vec<Vec<char>>) -> (symmetric: bool)
 
 fn main() {}
 
-}
+} // verus!

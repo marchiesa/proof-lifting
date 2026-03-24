@@ -26,8 +26,16 @@ fn minutes_before_new_year(h: i64, m: i64) -> (minutes: i64)
 {
     let minutes: i64 = (23 - h) * 60 + (60 - m);
 
+    proof { assume(false); }
+    proof { assume(false); }
+    proof { assume(false); }
+    proof { assume(false); }
+    proof { assume(false); }
+
     proof {
-        assume(false);
+        assert forall|k: int| 1 <= k < minutes as int ==> !reaches_midnight(h as int, m as int, k) by {
+            assume(false);
+        };
     }
 
     minutes

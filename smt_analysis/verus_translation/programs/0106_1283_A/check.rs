@@ -19,17 +19,17 @@ spec fn reaches_midnight(h: int, m: int, n: int) -> bool {
 }
 
 fn minutes_before_new_year(h: i64, m: i64) -> (minutes: i64)
-    requires valid_time(h as int, m as int)
-    ensures 1 <= (minutes as int) && (minutes as int) <= 1440
-    ensures reaches_midnight(h as int, m as int, minutes as int)
-    ensures forall|k: int| 1 <= k && k < (minutes as int) ==> !reaches_midnight(h as int, m as int, k)
+    requires
+        valid_time(h as int, m as int),
+    ensures
+        1 <= minutes as int && minutes as int <= 1440,
+        reaches_midnight(h as int, m as int, minutes as int),
+        forall|k: int| 1 <= k && k < minutes as int ==> !reaches_midnight(h as int, m as int, k),
 {
     let minutes: i64 = (23 - h) * 60 + (60 - m);
-
     proof {
         assume(false);
     }
-
     minutes
 }
 

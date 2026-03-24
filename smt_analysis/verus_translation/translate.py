@@ -114,7 +114,7 @@ Output ONLY the Rust/Verus code. No explanations. Start with `use vstd::prelude:
         try:
             r = subprocess.run(
                 ["claude", "-p", prompt, "--model", "sonnet"],
-                capture_output=True, text=True, timeout=180
+                capture_output=True, text=True, timeout=300
             )
             response = r.stdout.strip()
         except (subprocess.TimeoutExpired, FileNotFoundError) as e:
