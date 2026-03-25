@@ -13,8 +13,25 @@ Usage:
 
 import json
 import re
-from collections import Counter
 from pathlib import Path
+
+"""
+New categorization Pipeline. Takes base dafnyargs, including time limit, as input
+
+1. Ablate all 40 problems with essential assertions. For each of them
+    - make sure code verifies with args
+    - extract all assertions, for each assertion generate a modified version of the code by removing it stored in a tempfile / TempFolder
+    - for each modified program check if it still verifies, if it doesn't it's an essential assertion
+    - gather alll essential assertions
+
+2. For each problem with essential assertions
+    - run the brittlenes check, if it doesn't pass classify as brittle, also save length metrics for these problems. Process with those that pass
+    - test against category A with the new categorization scripts, both for e-matching and witness extraction
+    - test against category B with the new categorization scripts
+    We test all the non brittle problems against all the categories for now, to see if there is any overlap. Hopefully overlap is small.
+    Save the categorization.
+"""
+
 
 RESULTS_DIR = Path(__file__).parent.parent / "smt_analysis" / "results"
 
@@ -29,10 +46,10 @@ def normalize_assertion(expr: str) -> str:
     normalized = expr
 
     # Replace sequence slicing patterns
-    normalized = re.sub(r'\b\w+\[\.\.\w+\s*\+\s*1\]', 'SEQ[..IDX + 1]', normalized)
-    normalized = re.sub(r'\b\w+\[\.\.\w+\]', 'SEQ[..IDX]', normalized)
-    normalized = re.sub(r'\b\w+\[\.\.\|\w+\|\]', 'SEQ[..|SEQ|]', normalized)
-    normalized = re.sub(r'\b\w+\[\w+\]', 'SEQ[IDX]', normalized)
+    normalized = re.sub(r"\b\w+\[\.\.\w+\s*\+\s*1\]", "SEQ[..IDX + 1]", normalized)
+    normalized = re.sub(r"\b\w+\[\.\.\w+\]", "SEQ[..IDX]", normalized)
+    normalized = re.sub(r"\b\w+\[\.\.\|\w+\|\]", "SEQ[..|SEQ|]", normalized)
+    normalized = re.sub(r"\b\w+\[\w+\]", "SEQ[IDX]", normalized)
 
     return normalized
 
@@ -67,17 +84,19 @@ def main():
             ablation = json.loads(ablation_path.read_text())
             for a in ablation.get("results", []):
                 if a.get("essential"):
-                    all_essential.append({
-                        "problem": problem,
-                        "line": a.get("line", 0),
-                        "text": a.get("text", ""),
-                        "expr": a.get("expr", ""),
-                        "is_equality": a.get("is_equality", False),
-                    })
+                    all_essential.append(
+                        {
+                            "problem": problem,
+                            "line": a.get("line", 0),
+                            "text": a.get("text", ""),
+                            "expr": a.get("expr", ""),
+                            "is_equality": a.get("is_equality", False),
+                        }
+                    )
 
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"ABLATION SUMMARY")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"Problems analyzed: {len(reports)}")
     print(f"  With essential assertions: {problems_with_essential}")
     print(f"  Without (all non-essential): {problems_without}")
@@ -93,9 +112,9 @@ def main():
     print()
 
     # Group equalities by normalized pattern
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"EQUALITY ASSERTION PATTERNS (grouped by structure)")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     pattern_groups = {}
     for a in equalities:
@@ -115,9 +134,9 @@ def main():
 
     # Group non-equalities
     if non_equalities:
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"NON-EQUALITY ASSERTIONS (flagged for review)")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
 
         for a in non_equalities[:30]:
             print(f"  [{a['problem']}:{a['line']}] {a['text'][:80]}")
@@ -134,9 +153,13 @@ def main():
         "patterns": {
             pattern: {
                 "count": len(items),
-                "examples": [{"problem": a["problem"], "expr": a["expr"]} for a in items[:3]],
+                "examples": [
+                    {"problem": a["problem"], "expr": a["expr"]} for a in items[:3]
+                ],
             }
-            for pattern, items in sorted(pattern_groups.items(), key=lambda x: -len(x[1]))
+            for pattern, items in sorted(
+                pattern_groups.items(), key=lambda x: -len(x[1])
+            )
         },
         "non_equalities": [
             {"problem": a["problem"], "line": a["line"], "text": a["text"]}

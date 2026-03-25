@@ -14,6 +14,12 @@ Usage:
     python3 smt_analysis/classify.py --output quirks_catalog.json
 """
 
+"""
+Research question: Which proof assertions in verified Dafny programs are truly essential (SMT solver can't figure them  
+  out alone), what SMT mechanism causes the gap, and can LLMs supply them?
+"""
+
+
 from __future__ import annotations
 
 import argparse
@@ -81,7 +87,11 @@ def collect_reports(results_dir: Path) -> list[dict]:
         report_file = problem_dir / "report.json"
         fast_file = problem_dir / "fast_report.json"
         # Prefer report.json (full analysis); fall back to fast_report.json
-        chosen = report_file if report_file.exists() else (fast_file if fast_file.exists() else None)
+        chosen = (
+            report_file
+            if report_file.exists()
+            else (fast_file if fast_file.exists() else None)
+        )
         if chosen is None:
             continue
         try:
@@ -124,9 +134,9 @@ def extract_quirks(reports: list[dict]) -> list[dict]:
 
 
 _CAT_DESCRIPTIONS = {
-    "A1": "Existential witness assertion. The solver needs help instantiating an existential — the assertion provides a concrete witness.",
-    "A2": "Predicate/function call assertion. Expands a predicate application so the solver can unfold its definition at that point.",
-    "A3": "Function-at-specific-value assertion. Ties a recursive ghost function to a concrete input, avoiding quantifier instantiation failures.",
+    "A1": "Existential witness assertion (legacy; now A3). The solver needs help instantiating an existential — the assertion provides a concrete witness.",
+    "A2": "Predicate/function call assertion. Places a ground term P(args) in the e-graph so that a universally quantified definition axiom or forall hypothesis fires at specific arguments. Includes ghost function equalities at concrete inputs (formerly A3).",
+    "A3": "Z3 does not search for existential witnesses. Even when a witness is trivially obvious or the domain is finite (e.g. bool), Z3 never enumerates candidates — an explicit assert P(witness) is required.",
     "A4": "Universal quantifier assertion. Provides a forall fact the solver cannot derive by E-matching alone.",
     "A5": "Specific-element equality. Pins down the value of a collection element at a particular index to guide unification.",
     "B1": "Sequence slice equality (SMT axiom gap). Boogie's sequence prelude is missing axioms for Seq#Take, Seq#Append or Seq#Drop compositions; the assertion provides the equality via Seq#Equal extensionality.",
@@ -171,12 +181,17 @@ def aggregate_direct(reports: list[dict], quirks: list[dict]) -> dict:
         hl = q.get("high_level", "unknown")
         if hl == "unknown" and cat in _CAT_DESCRIPTIONS:
             hl = {
-                "A1": "A-structural", "A2": "A-structural", "A3": "A-structural",
-                "A4": "A-structural", "A5": "A-structural",
+                "A1": "A-structural",
+                "A2": "A-structural",
+                "A3": "A-structural",
+                "A4": "A-structural",
+                "A5": "A-structural",
                 "B1": "B-missing-axioms",
                 "C1": "C-arithmetic",
-                "D1": "D-case-analysis", "D2": "D-case-analysis",
-                "D3": "D-case-analysis", "D4": "D-case-analysis",
+                "D1": "D-case-analysis",
+                "D2": "D-case-analysis",
+                "D3": "D-case-analysis",
+                "D4": "D-case-analysis",
             }.get(cat, hl)
         high_level_groups[hl].append(q)
         if cat not in categories:
@@ -220,14 +235,17 @@ def aggregate_direct(reports: list[dict], quirks: list[dict]) -> dict:
             entry["subtypes"] = dict(info["subtypes"])
         quirk_types[name] = entry
 
-    most_common = max(quirk_types, key=lambda k: quirk_types[k]["count"]) if quirk_types else ""
+    most_common = (
+        max(quirk_types, key=lambda k: quirk_types[k]["count"]) if quirk_types else ""
+    )
     total_problems = len(reports)
     solved_problems = sum(1 for r in reports if r.get("solved"))
 
     catalog = {
         "quirk_types": quirk_types,
         "high_level_summary": {
-            hl: len(qs) for hl, qs in sorted(high_level_groups.items(), key=lambda x: -len(x[1]))
+            hl: len(qs)
+            for hl, qs in sorted(high_level_groups.items(), key=lambda x: -len(x[1]))
         },
         "summary": {
             "total_quirks": len(quirks),
@@ -427,7 +445,9 @@ def main():
     print(f"Collecting reports from {args.reports_dir}...")
     reports = collect_reports(args.reports_dir)
     fast_count = sum(1 for r in reports if r.get("_format") == "fast")
-    print(f"  Found {len(reports)} reports ({fast_count} fast_report, {len(reports) - fast_count} report)")
+    print(
+        f"  Found {len(reports)} reports ({fast_count} fast_report, {len(reports) - fast_count} report)"
+    )
 
     if not reports:
         print("No reports found. Run quirk_finder.py first.")

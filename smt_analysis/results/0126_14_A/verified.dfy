@@ -271,28 +271,28 @@ method Letter(grid: seq<string>) returns (result: seq<string>)
   }
 
   // === PROVE TIGHTBOUNDS ===
-  // assert exists c | 0 <= c < |grid[top]| :: grid[top][c] == '*';
-  // assert exists c | 0 <= c < |grid[bot]| :: grid[bot][c] == '*';
-  // assert exists r | 0 <= r < n :: grid[r][left] == '*';
-  // assert exists r | 0 <= r < n :: grid[r][ri] == '*';
+  assert exists c | 0 <= c < |grid[top]| :: grid[top][c] == '*';
+  assert exists c | 0 <= c < |grid[bot]| :: grid[bot][c] == '*';
+  assert exists r | 0 <= r < n :: grid[r][left] == '*';
+  assert exists r | 0 <= r < n :: grid[r][ri] == '*';
 
-  // assert exists c | left <= c < right :: grid[top][c] == '*' by {
-  //   var c0 :| 0 <= c0 < |grid[top]| && grid[top][c0] == '*';
-  //   assert left <= c0 < right;
-  // }
+  assert exists c | left <= c < right :: grid[top][c] == '*' by {
+    var c0 :| 0 <= c0 < |grid[top]| && grid[top][c0] == '*';
+    assert left <= c0 < right;
+  }
   assert exists c {:trigger grid[bot][c]} | left <= c < right :: grid[bottom - 1][c] == '*';
-  // assert exists c {:trigger grid[bottom - 1][c]} | left <= c < right :: grid[bottom - 1][c] == '*' by {
-  //   var c0 :| 0 <= c0 < |grid[bot]| && grid[bottom - 1][c0] == '*';
-  //   assert left <= c0 < right;
-  // }
-  // assert exists r | top <= r < bottom :: grid[r][left] == '*' by {
-  //   var r0 :| 0 <= r0 < n && grid[r0][left] == '*';
-  //   assert top <= r0 < bottom;
-  // }
-  // assert exists r | top <= r < bottom :: grid[r][right - 1] == '*' by {
-  //   var r0 :| 0 <= r0 < n && grid[r0][ri] == '*';
-  //   assert top <= r0 < bottom;
-  // }
+  assert exists c {:trigger grid[bottom - 1][c]} | left <= c < right :: grid[bottom - 1][c] == '*' by {
+    var c0 :| 0 <= c0 < |grid[bot]| && grid[bottom - 1][c0] == '*';
+    assert left <= c0 < right;
+  }
+  assert exists r | top <= r < bottom :: grid[r][left] == '*' by {
+    var r0 :| 0 <= r0 < n && grid[r0][left] == '*';
+    assert top <= r0 < bottom;
+  }
+  assert exists r | top <= r < bottom :: grid[r][right - 1] == '*' by {
+    var r0 :| 0 <= r0 < n && grid[r0][ri] == '*';
+    assert top <= r0 < bottom;
+  }
 
   assert forall r | top <= r < bottom :: right <= |grid[r]| by {
     forall r | top <= r < bottom ensures right <= |grid[r]| {
