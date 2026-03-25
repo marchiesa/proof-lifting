@@ -64,8 +64,8 @@ def call_claude(prompt: str) -> str:
     """Call Claude CLI."""
     try:
         r = subprocess.run(
-            ["claude", "-p", prompt, "--model", "sonnet"],
-            capture_output=True, text=True, timeout=300
+            ["claude", "-p", "--dangerously-skip-permissions", "--no-session-persistence"],
+            input=prompt, capture_output=True, text=True, timeout=300
         )
         return r.stdout.strip()
     except subprocess.TimeoutExpired:

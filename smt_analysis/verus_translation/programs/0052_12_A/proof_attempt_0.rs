@@ -51,6 +51,7 @@ fn super_agent(grid: &Vec<Vec<char>>) -> (symmetric: bool)
         invariant
             0 <= i <= 3,
             valid_grid(g),
+            g == grid@.map_values(|row: Vec<char>| row@),
             !bad == checked_so_far(g, i as int, 0),
         decreases 3 - i,
     {
@@ -60,6 +61,7 @@ fn super_agent(grid: &Vec<Vec<char>>) -> (symmetric: bool)
                 0 <= i < 3,
                 0 <= j <= 3,
                 valid_grid(g),
+                g == grid@.map_values(|row: Vec<char>| row@),
                 !bad == (checked_so_far(g, i as int, 0) && checked_row(g, i as int, j as int)),
             decreases 3 - j,
         {

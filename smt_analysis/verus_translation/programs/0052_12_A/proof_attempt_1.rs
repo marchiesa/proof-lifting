@@ -3,14 +3,14 @@ use vstd::prelude::*;
 verus! {
 
 spec fn valid_grid(grid: Seq<Seq<char>>) -> bool {
-    grid.len() == 3 && forall|i: int| 0 <= i < 3 ==> #[trigger] grid[i].len() == 3
+    grid.len() == 3 && forall|i: int| #![trigger grid[i]] 0 <= i < 3 ==> grid[i].len() == 3
 }
 
 spec fn symmetric_about_center(grid: Seq<Seq<char>>) -> bool
     recommends valid_grid(grid)
 {
-    forall|i: int, j: int| (0 <= i < 3 && 0 <= j < 3) ==>
-        (#[trigger] grid[i][j] == 'X' ==> grid[2 - i][2 - j] == 'X')
+    forall|i: int, j: int| #![trigger grid[i][j]] (0 <= i < 3 && 0 <= j < 3) ==>
+        (grid[i][j] == 'X' ==> grid[2 - i][2 - j] == 'X')
 }
 
 spec fn checked_so_far(grid: Seq<Seq<char>>, row: int, col: int) -> bool
@@ -21,8 +21,8 @@ spec fn checked_so_far(grid: Seq<Seq<char>>, row: int, col: int) -> bool
         0 <= col,
         col <= 3
 {
-    forall|i: int, j: int| (0 <= i < row && 0 <= j < 3) ==>
-        (#[trigger] grid[i][j] == 'X' ==> grid[2 - i][2 - j] == 'X')
+    forall|i: int, j: int| #![trigger grid[i][j]] (0 <= i < row && 0 <= j < 3) ==>
+        (grid[i][j] == 'X' ==> grid[2 - i][2 - j] == 'X')
 }
 
 spec fn checked_row(grid: Seq<Seq<char>>, row: int, col: int) -> bool
@@ -33,8 +33,8 @@ spec fn checked_row(grid: Seq<Seq<char>>, row: int, col: int) -> bool
         0 <= col,
         col <= 3
 {
-    forall|j: int| (0 <= j < col) ==>
-        (#[trigger] grid[row][j] == 'X' ==> grid[2 - row][2 - j] == 'X')
+    forall|j: int| #![trigger grid[row][j]] (0 <= j < col) ==>
+        (grid[row][j] == 'X' ==> grid[2 - row][2 - j] == 'X')
 }
 
 #[verifier::loop_isolation(false)]
@@ -51,6 +51,7 @@ fn super_agent(grid: &Vec<Vec<char>>) -> (symmetric: bool)
         invariant
             0 <= i <= 3,
             valid_grid(g),
+            g == grid@.map_values(|row: Vec<char>| row@),
             !bad == checked_so_far(g, i as int, 0),
         decreases 3 - i,
     {
@@ -60,6 +61,7 @@ fn super_agent(grid: &Vec<Vec<char>>) -> (symmetric: bool)
                 0 <= i < 3,
                 0 <= j <= 3,
                 valid_grid(g),
+                g == grid@.map_values(|row: Vec<char>| row@),
                 !bad == (checked_so_far(g, i as int, 0) && checked_row(g, i as int, j as int)),
             decreases 3 - j,
         {

@@ -19,10 +19,7 @@ spec fn MinCost(n: int, a: int, b: int) -> int {
 #[verifier::loop_isolation(false)]
 fn WaterBuying(queries: &Vec<(i64, i64, i64)>) -> (results: Vec<i64>)
     requires
-        forall|i: int| 0 <= i < queries@.len() ==>
-            queries@[i].0 >= 0 && queries@[i].0 <= 1_000_000_000 &&
-            queries@[i].1 >= 0 && queries@[i].1 <= 1_000_000_000 &&
-            queries@[i].2 >= 0 && queries@[i].2 <= 1_000_000_000,
+        forall|i: int| 0 <= i < queries@.len() ==> queries@[i].0 >= 0,
     ensures
         results@.len() == queries@.len(),
         forall|i: int| 0 <= i < queries@.len() ==>
@@ -49,23 +46,6 @@ fn WaterBuying(queries: &Vec<(i64, i64, i64)>) -> (results: Vec<i64>)
         let (n, a, b) = queries[i];
         let two = 2 * a;
         let m = if two < b { two } else { b };
-
-        proof {
-            let n_int = n as int;
-            let a_int = a as int;
-            let m_int = m as int;
-
-            assert(n_int / 2 >= 0 && n_int / 2 <= 500_000_000) by(nonlinear_arith)
-                requires 0 <= n_int <= 1_000_000_000;
-            assert(0 <= m_int <= 2_000_000_000);
-            assert((n_int / 2) * m_int >= 0 && (n_int / 2) * m_int <= 1_000_000_000_000_000_000int) by(nonlinear_arith)
-                requires n_int / 2 >= 0, n_int / 2 <= 500_000_000, m_int >= 0, m_int <= 2_000_000_000;
-            assert(n_int % 2 >= 0 && n_int % 2 <= 1) by(nonlinear_arith)
-                requires n_int >= 0;
-            assert((n_int % 2) * a_int >= 0 && (n_int % 2) * a_int <= 1_000_000_000) by(nonlinear_arith)
-                requires n_int % 2 >= 0, n_int % 2 <= 1, a_int >= 0, a_int <= 1_000_000_000;
-        }
-
         let ans = (n / 2) * m + (n % 2) * a;
 
         proof {

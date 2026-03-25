@@ -51,14 +51,15 @@ fn FrogJumping(queries: &Vec<(i64, i64, i64)>) -> (results: Vec<i64>)
     while i < queries.len()
         invariant
             0 <= i <= queries@.len(),
-            results@.len() == i,
-            forall|j: int| 0 <= j < i ==>
+            results@.len() == i as int,
+            forall|j: int| 0 <= j < i as int ==>
                 results@[j] as int == FrogPosition(
                     queries@[j].0 as int,
                     queries@[j].1 as int,
                     queries@[j].2 as nat,
                 ),
-        decreases queries.len() - i,
+            forall|j: int| 0 <= j < queries@.len() ==> queries@[j].2 >= 0,
+        decreases queries@.len() - i,
     {
         let (a, b, k) = queries[i];
         let half = k / 2;

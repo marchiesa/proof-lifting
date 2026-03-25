@@ -48,6 +48,19 @@ proof fn CeilDivIsMinCover(need: int, k: int)
     }
 }
 
+proof fn ceil_div_upper_bound(need: int, k: int)
+    requires
+        k >= 1,
+        need >= 1,
+    ensures
+        (need + k - 1) / k <= need,
+{
+    let m = (need + k - 1) / k;
+    let rem = (need + k - 1) % k;
+    assert(m <= need) by (nonlinear_arith)
+        requires need >= 1, k >= 1, need + k - 1 == m * k + rem, 0 <= rem, rem < k;
+}
+
 fn PetyaAndOrigami(n: i64, k: i64) -> (notebooks: i64)
     requires
         1 <= n <= 1_000_000_000,
@@ -60,14 +73,21 @@ fn PetyaAndOrigami(n: i64, k: i64) -> (notebooks: i64)
     let b = (n * 8 + k - 1) / k;
 
     proof {
-        CeilDivIsMinCover(2 * (n as int), k as int);
-        CeilDivIsMinCover(5 * (n as int), k as int);
-        CeilDivIsMinCover(8 * (n as int), k as int);
+        let nn = n as int;
+        let kk = k as int;
 
-        assert(IsMinCover(r as int, 2 * (n as int), k as int));
-        assert(IsMinCover(g as int, 5 * (n as int), k as int));
-        assert(IsMinCover(b as int, 8 * (n as int), k as int));
-        assert(SufficientNotebooks(r as int, g as int, b as int, n as int, k as int));
+        CeilDivIsMinCover(2 * nn, kk);
+        CeilDivIsMinCover(5 * nn, kk);
+        CeilDivIsMinCover(8 * nn, kk);
+
+        ceil_div_upper_bound(2 * nn, kk);
+        ceil_div_upper_bound(5 * nn, kk);
+        ceil_div_upper_bound(8 * nn, kk);
+
+        assert(IsMinCover(r as int, 2 * nn, kk));
+        assert(IsMinCover(g as int, 5 * nn, kk));
+        assert(IsMinCover(b as int, 8 * nn, kk));
+        assert(SufficientNotebooks(r as int, g as int, b as int, nn, kk));
     }
     r + g + b
 }

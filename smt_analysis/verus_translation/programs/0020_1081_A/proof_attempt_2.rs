@@ -58,10 +58,7 @@ fn definite_game(v: i64) -> (result: i64)
         proof {
             let v = v as int;
             assert(v >= 3);
-            assert(v % (v - 1) != 0) by(nonlinear_arith)
-                requires v >= 3
-            {
-            }
+            assert(v % (v - 1) != 0) by(nonlinear_arith);
             assert(valid_move(v, v - 1));
             assert(reachable(1int, 1int, (v - 1) as nat));
             reachable_step(v, 1int, v - 1, v as nat);

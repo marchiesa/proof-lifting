@@ -23,7 +23,7 @@ fn new_year_naming(n: i64, m: i64, s: &Vec<String>, t: &Vec<String>, queries: &V
         n > 0 && m > 0,
         s@.len() == n as int,
         t@.len() == m as int,
-        forall|i: int| 0 <= i < queries@.len() ==> queries@[i] >= 1i64,
+        forall|i: int| 0 <= i < queries@.len() ==> queries@[i] >= 1,
     ensures
         results@.len() == queries@.len(),
         forall|i: int| 0 <= i < results@.len() ==>
@@ -37,47 +37,42 @@ fn new_year_naming(n: i64, m: i64, s: &Vec<String>, t: &Vec<String>, queries: &V
     let mut i: usize = 0;
     while i < queries.len()
         invariant
-            i <= queries@.len(),
+            0 <= i <= queries@.len(),
             results@.len() == i as int,
-            forall|j: int| 0 <= j < i ==>
+            n > 0 && m > 0,
+            s@.len() == n as int,
+            t@.len() == m as int,
+            forall|j: int| 0 <= j < queries@.len() ==> queries@[j] >= 1,
+            forall|j: int| 0 <= j < i as int ==>
                 results@[j]@ == gapja_name(
                     queries@[j] as int,
                     s@.map_values(|v: String| v@),
                     t@.map_values(|v: String| v@),
                 ),
-        decreases queries.len() - i
+        decreases queries@.len() - i,
     {
         let x = queries[i] - 1;
-        proof {
-            assert(queries@[i as int] >= 1i64);
-            assert(x as int == queries@[i as int] as int - 1);
-            assert(x >= 0i64);
-            assert(x as int % n as int == cyclic_index(queries@[i as int] as int, n as int));
-            assert(x as int % m as int == cyclic_index(queries@[i as int] as int, m as int));
-        }
+        assert(queries@[i as int] >= 1);
+        assert(x == queries@[i as int] - 1);
+        assert(x % n == cyclic_index(queries@[i as int] as int, n as int));
+        assert(x % m == cyclic_index(queries@[i as int] as int, m as int));
         let si = (x % n) as usize;
         let ti = (x % m) as usize;
-        proof {
-            assert((x % n) as int == x as int % n as int) by(nonlinear_arith);
-            assert((x % m) as int == x as int % m as int) by(nonlinear_arith);
-            assert(si as int == cyclic_index(queries@[i as int] as int, n as int));
-            assert(ti as int == cyclic_index(queries@[i as int] as int, m as int));
-        }
         let mut name = s[si].clone();
         string_append(&mut name, &t[ti]);
-        proof {
-            let year = queries@[i as int] as int;
-            let ss = s@.map_values(|v: String| v@);
-            let tt = t@.map_values(|v: String| v@);
-            assert(ss.len() == n as int);
-            assert(tt.len() == m as int);
-            assert(ss[si as int] == s@[si as int]@);
-            assert(tt[ti as int] == t@[ti as int]@);
-            assert(name@ == ss[si as int] + tt[ti as int]);
-            assert(si as int == cyclic_index(year, ss.len() as int));
-            assert(ti as int == cyclic_index(year, tt.len() as int));
-            assert(name@ == gapja_name(year, ss, tt));
-        }
+
+        // Bridge map_values indexing with direct indexing
+        assert(s@.map_values(|v: String| v@).len() == n as int);
+        assert(t@.map_values(|v: String| v@).len() == m as int);
+        assert(s@.map_values(|v: String| v@)[si as int] == s@[si as int]@);
+        assert(t@.map_values(|v: String| v@)[ti as int] == t@[ti as int]@);
+        assert(name@ == s@.map_values(|v: String| v@)[si as int] + t@.map_values(|v: String| v@)[ti as int]);
+        assert(name@ == gapja_name(
+            queries@[i as int] as int,
+            s@.map_values(|v: String| v@),
+            t@.map_values(|v: String| v@),
+        ));
+
         results.push(name);
         i += 1;
     }

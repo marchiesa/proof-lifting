@@ -34,8 +34,7 @@ proof fn FrogPositionClosedForm(a: int, b: int, k: nat)
 #[verifier::loop_isolation(false)]
 fn FrogJumping(queries: &Vec<(i64, i64, i64)>) -> (results: Vec<i64>)
     requires
-        forall|i: int| #![trigger queries@[i]]
-            0 <= i < queries@.len() ==>
+        forall|i: int| 0 <= i < queries@.len() ==>
             -1_000_000_000 <= queries@[i].0 <= 1_000_000_000
             && -1_000_000_000 <= queries@[i].1 <= 1_000_000_000
             && 0 <= queries@[i].2 <= 1_000_000_000,
@@ -60,8 +59,7 @@ fn FrogJumping(queries: &Vec<(i64, i64, i64)>) -> (results: Vec<i64>)
                     queries@[j].1 as int,
                     queries@[j].2 as nat,
                 ),
-            forall|j: int| #![trigger queries@[j]]
-                0 <= j < queries@.len() ==>
+            forall|j: int| 0 <= j < queries@.len() ==>
                 -1_000_000_000 <= queries@[j].0 <= 1_000_000_000
                 && -1_000_000_000 <= queries@[j].1 <= 1_000_000_000
                 && 0 <= queries@[j].2 <= 1_000_000_000,
@@ -69,26 +67,6 @@ fn FrogJumping(queries: &Vec<(i64, i64, i64)>) -> (results: Vec<i64>)
     {
         let (a, b, k) = queries[i];
         let half = k / 2;
-
-        proof {
-            assert((a as int) * (half as int) >= -500_000_000_000_000_000
-                && (a as int) * (half as int) <= 500_000_000_000_000_000) by(nonlinear_arith)
-                requires
-                    a as int >= -1_000_000_000,
-                    a as int <= 1_000_000_000,
-                    half as int >= 0,
-                    half as int <= 500_000_000,
-            ;
-            assert((b as int) * (half as int) >= -500_000_000_000_000_000
-                && (b as int) * (half as int) <= 500_000_000_000_000_000) by(nonlinear_arith)
-                requires
-                    b as int >= -1_000_000_000,
-                    b as int <= 1_000_000_000,
-                    half as int >= 0,
-                    half as int <= 500_000_000,
-            ;
-        }
-
         let mut ans: i64 = a * half - b * half;
         if k % 2 == 1 {
             ans = ans + a;

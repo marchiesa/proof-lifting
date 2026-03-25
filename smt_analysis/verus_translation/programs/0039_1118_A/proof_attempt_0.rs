@@ -33,15 +33,15 @@ fn WaterBuying(queries: &Vec<(i64, i64, i64)>) -> (results: Vec<i64>)
     let mut i: usize = 0;
     while i < queries.len()
         invariant
-            0 <= i <= queries.len(),
-            results@.len() == i,
-            forall|j: int| 0 <= j < i ==>
+            0 <= i <= queries@.len(),
+            results@.len() == i as int,
+            forall|j: int| 0 <= j < i as int ==>
                 results@[j] as int == MinCost(
                     queries@[j].0 as int,
                     queries@[j].1 as int,
                     queries@[j].2 as int,
                 ),
-        decreases queries.len() - i,
+        decreases queries@.len() - i,
     {
         let (n, a, b) = queries[i];
         let two = 2 * a;
@@ -49,45 +49,60 @@ fn WaterBuying(queries: &Vec<(i64, i64, i64)>) -> (results: Vec<i64>)
         let ans = (n / 2) * m + (n % 2) * a;
 
         proof {
-            let n_int: int = n as int;
-            let a_int: int = a as int;
-            let b_int: int = b as int;
+            let n_int = n as int;
+            let a_int = a as int;
+            let b_int = b as int;
+            let m_int = m as int;
+            let ans_int = ans as int;
 
             assert(n_int >= 0);
-            assert(n_int / 2 * 2 + n_int % 2 == n_int);
 
-            let allOnesCost: int = PurchaseCost(n_int, 0, a_int, b_int);
-            let maxTwosCost: int = PurchaseCost(n_int % 2, n_int / 2, a_int, b_int);
+            assert((n_int / 2) * 2 + (n_int % 2) == n_int) by(nonlinear_arith)
+                requires(n_int >= 0);
 
-            assert(allOnesCost == n_int * a_int);
-            assert(maxTwosCost == (n_int % 2) * a_int + (n_int / 2) * b_int);
+            assert(n_int / 2 >= 0) by(nonlinear_arith)
+                requires(n_int >= 0);
+
+            assert(n_int % 2 >= 0) by(nonlinear_arith)
+                requires(n_int >= 0);
+
+            assert(PurchaseCost(n_int, 0, a_int, b_int) == n_int * a_int);
+            assert(PurchaseCost(n_int % 2, n_int / 2, a_int, b_int) == (n_int % 2) * a_int + (n_int / 2) * b_int);
 
             if two < b {
-                assert(two as int == 2 * a_int);
-                assert(m as int == 2 * a_int);
-                assert(ans as int == (n_int / 2) * (2 * a_int) + (n_int % 2) * a_int);
-                assert((n_int / 2) * (2 * a_int) == (n_int / 2 * 2) * a_int) by (nonlinear_arith);
-                assert(ans as int == (n_int / 2 * 2 + n_int % 2) * a_int) by (nonlinear_arith);
-                assert(ans as int == n_int * a_int);
-                assert(2 * a_int < b_int);
-                assert(2 * a_int - b_int < 0);
-                assert(n_int / 2 >= 0);
-                assert((n_int / 2) * (2 * a_int - b_int) <= 0) by (nonlinear_arith);
-                assert(n_int * a_int - ((n_int % 2) * a_int + (n_int / 2) * b_int) == (n_int / 2) * (2 * a_int - b_int)) by (nonlinear_arith);
-                assert(allOnesCost <= maxTwosCost);
-                assert(ans as int == MinCost(n_int, a_int, b_int));
+                assert(m_int == 2 * a_int);
+
+                assert(ans_int == n_int * a_int) by(nonlinear_arith)
+                    requires(
+                        ans_int == (n_int / 2) * m_int + (n_int % 2) * a_int,
+                        m_int == 2 * a_int,
+                        (n_int / 2) * 2 + (n_int % 2) == n_int,
+                    );
+
+                assert(n_int * a_int <= (n_int % 2) * a_int + (n_int / 2) * b_int) by(nonlinear_arith)
+                    requires(
+                        (n_int / 2) * 2 + (n_int % 2) == n_int,
+                        n_int / 2 >= 0,
+                        2 * a_int < b_int,
+                    );
             } else {
-                assert(m as int == b_int);
-                assert(ans as int == (n_int / 2) * b_int + (n_int % 2) * a_int);
-                assert(ans as int == maxTwosCost);
-                assert(2 * a_int >= b_int);
-                assert(2 * a_int - b_int >= 0);
-                assert(n_int / 2 >= 0);
-                assert((n_int / 2) * (2 * a_int - b_int) >= 0) by (nonlinear_arith);
-                assert(n_int * a_int - ((n_int % 2) * a_int + (n_int / 2) * b_int) == (n_int / 2) * (2 * a_int - b_int)) by (nonlinear_arith);
-                assert(allOnesCost >= maxTwosCost);
-                assert(ans as int == MinCost(n_int, a_int, b_int));
+                assert(m_int == b_int);
+
+                assert(ans_int == (n_int / 2) * b_int + (n_int % 2) * a_int) by(nonlinear_arith)
+                    requires(
+                        ans_int == (n_int / 2) * m_int + (n_int % 2) * a_int,
+                        m_int == b_int,
+                    );
+
+                assert((n_int % 2) * a_int + (n_int / 2) * b_int <= n_int * a_int) by(nonlinear_arith)
+                    requires(
+                        (n_int / 2) * 2 + (n_int % 2) == n_int,
+                        n_int / 2 >= 0,
+                        2 * a_int >= b_int,
+                    );
             }
+
+            assert(ans_int == MinCost(n_int, a_int, b_int));
         }
 
         results.push(ans);

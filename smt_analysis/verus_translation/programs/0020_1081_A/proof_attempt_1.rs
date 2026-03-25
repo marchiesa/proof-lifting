@@ -24,20 +24,6 @@ spec fn is_min_reachable(v: int, result: int) -> bool {
         1 <= r && r < result ==> !reachable(v, r, v as nat)
 }
 
-proof fn reachable_step(start: int, target: int, x: int, steps: nat)
-    requires
-        start >= 1,
-        target >= 1,
-        steps > 0,
-        1 <= x < start,
-        valid_move(start, x),
-        reachable(start - x, target, (steps - 1) as nat),
-    ensures
-        reachable(start, target, steps),
-{
-    assert(valid_move(start, x));
-}
-
 fn definite_game(v: i64) -> (result: i64)
     requires v >= 1,
     ensures is_min_reachable(v as int, result as int),
@@ -58,13 +44,10 @@ fn definite_game(v: i64) -> (result: i64)
         proof {
             let v = v as int;
             assert(v >= 3);
-            assert(v % (v - 1) != 0) by(nonlinear_arith)
-                requires v >= 3
-            {
-            }
+            assert(v % (v - 1) != 0) by(nonlinear_arith);
             assert(valid_move(v, v - 1));
             assert(reachable(1int, 1int, (v - 1) as nat));
-            reachable_step(v, 1int, v - 1, v as nat);
+            assert(reachable(v, 1int, v as nat));
         }
         1
     }
