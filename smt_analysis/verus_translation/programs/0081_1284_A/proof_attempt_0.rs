@@ -37,29 +37,30 @@ fn new_year_naming(n: i64, m: i64, s: &Vec<String>, t: &Vec<String>, queries: &V
     let mut i: usize = 0;
     while i < queries.len()
         invariant
-            0 <= i <= queries@.len(),
+            i <= queries@.len(),
             results@.len() == i as int,
-            n > 0 && m > 0,
-            s@.len() == n as int,
-            t@.len() == m as int,
-            forall|j: int| 0 <= j < queries@.len() ==> queries@[j] >= 1,
             forall|j: int| 0 <= j < i as int ==>
                 results@[j]@ == gapja_name(
                     queries@[j] as int,
                     s@.map_values(|v: String| v@),
                     t@.map_values(|v: String| v@),
                 ),
-        decreases queries@.len() - i,
+        decreases queries@.len() - i as int,
     {
         let x = queries[i] - 1;
         assert(queries@[i as int] >= 1);
-        assert(x == queries@[i as int] - 1);
-        assert(x % n == cyclic_index(queries@[i as int] as int, n as int));
-        assert(x % m == cyclic_index(queries@[i as int] as int, m as int));
+        assert(x as int == queries@[i as int] as int - 1);
+        assert(x as int % n as int == cyclic_index(queries@[i as int] as int, n as int));
+        assert(x as int % m as int == cyclic_index(queries@[i as int] as int, m as int));
         let si = (x % n) as usize;
         let ti = (x % m) as usize;
         let mut name = s[si].clone();
         string_append(&mut name, &t[ti]);
+        assert(name@ =~= gapja_name(
+            queries@[i as int] as int,
+            s@.map_values(|v: String| v@),
+            t@.map_values(|v: String| v@),
+        ));
         results.push(name);
         i += 1;
     }

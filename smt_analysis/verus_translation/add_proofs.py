@@ -97,8 +97,10 @@ def build_initial_prompt(verus_code: str, dafny_code: str, errors: str, problem:
     return f"""This Verus (Rust verification) program compiles but does NOT verify.
 Add the necessary proof annotations to make it verify with `verus`.
 
-The program was translated from Dafny. The Dafny version verifies successfully.
-Use the Dafny version as a guide for what invariants and assertions are needed.
+The program was translated from Dafny. Below is the VERIFIED Dafny version
+with working proofs (loop invariants, assertions, lemmas). Use it as a direct
+guide — translate the Dafny proof strategy to Verus. The specs may differ
+slightly but the proof structure should be similar.
 
 RULES FOR VERUS PROOFS:
 1. Add `decreases` clauses to all loops (e.g., `decreases vec.len() - i`)
@@ -120,7 +122,7 @@ Verus code ({problem}):
 {verus_code}
 ```
 
-Original Dafny (verified):
+VERIFIED Dafny (has working proofs — use as guide for invariants/assertions):
 ```dafny
 {dafny_code}
 ```
@@ -146,7 +148,7 @@ Verus code:
 {verus_code}
 ```
 
-Dafny reference:
+VERIFIED Dafny (working proofs — translate proof strategy to Verus):
 ```dafny
 {dafny_code}
 ```
@@ -171,12 +173,20 @@ def process_one(problem: str) -> dict:
     """Add proofs to one program."""
     rs_path = PROGRAMS_DIR / problem / "translated.rs"
     dfy_path = PROGRAMS_DIR / problem / "source.dfy"
+    # Use the VERIFIED Dafny file (has working proofs) if available
+    dfy_verified_path = SCRIPT_DIR.parent / "results" / problem / "verified.dfy"
 
     if not rs_path.exists():
         return {"status": "error", "error": "no translated.rs"}
 
     verus_code = rs_path.read_text()
-    dafny_code = dfy_path.read_text() if dfy_path.exists() else ""
+    # Prefer verified.dfy (has proofs) over source.dfy (just spec)
+    if dfy_verified_path.exists():
+        dafny_code = dfy_verified_path.read_text()
+    elif dfy_path.exists():
+        dafny_code = dfy_path.read_text()
+    else:
+        dafny_code = ""
 
     # First check if it already verifies
     ok, output = verify(rs_path)

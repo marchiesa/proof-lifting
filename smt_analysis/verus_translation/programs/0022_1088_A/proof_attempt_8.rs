@@ -29,9 +29,9 @@ fn ehab_construction(x: i64) -> (result: (i64, i64, bool))
         invariant
             1 <= ai,
             found ==> valid_pair(a as int, b as int, x as int),
-            !found ==> forall|a_p: int, b_p: int|
-                1 <= a_p < ai as int && 1 <= b_p <= x as int
-                    ==> !valid_pair(a_p, b_p, x as int),
+            !found ==> forall|a2: int, b2: int|
+                1 <= a2 < ai as int && 1 <= b2 <= x as int
+                    ==> !valid_pair(a2, b2, x as int),
         decreases x - ai,
     {
         let mut bi: i64 = 1;
@@ -40,12 +40,11 @@ fn ehab_construction(x: i64) -> (result: (i64, i64, bool))
                 1 <= ai <= x,
                 1 <= bi,
                 found ==> valid_pair(a as int, b as int, x as int),
-                !found ==> forall|a_p: int, b_p: int|
-                    1 <= a_p < ai as int && 1 <= b_p <= x as int
-                        ==> !valid_pair(a_p, b_p, x as int),
-                !found ==> forall|b_p: int|
-                    1 <= b_p < bi as int
-                        ==> !valid_pair(ai as int, b_p, x as int),
+                !found ==> forall|a2: int, b2: int|
+                    1 <= a2 < ai as int && 1 <= b2 <= x as int
+                        ==> !valid_pair(a2, b2, x as int),
+                !found ==> forall|b2: int|
+                    1 <= b2 < bi as int ==> !valid_pair(ai as int, b2, x as int),
             decreases ai - bi,
         {
             if ai % bi == 0 && ai * bi > x && ai / bi < x {
@@ -56,12 +55,13 @@ fn ehab_construction(x: i64) -> (result: (i64, i64, bool))
             bi = bi + 1;
         }
         if !found {
-            assert forall|b_p: int| ai as int < b_p <= x as int
-                implies !valid_pair(ai as int, b_p, x as int)
-            by {
-                // When 1 <= ai < b_p, ai % b_p == ai >= 1, so a % b != 0
-                assert((ai as int) % b_p == (ai as int));
-            };
+            proof {
+                assert forall|b2: int| ai as int < b2 && b2 <= x as int
+                    implies !valid_pair(ai as int, b2, x as int) by
+                {
+                    assert(ai as int % b2 == ai as int);
+                }
+            }
         }
         ai = ai + 1;
     }

@@ -72,6 +72,7 @@ proof fn rhombus_cell_count_closed_form(n: int)
         rhombus_cell_count_closed_form(n - 1);
         assert(row_width(-r, r) == 1);
         assert(row_width(r, r) == 1);
+        assert(sum_rows(-r, r, r) == row_width(-r, r) + sum_rows(-r + 1, r, r));
         sum_rows_append(-(r - 1), r, r);
         sum_rows_radius_step(-(r - 1), r - 1, r);
     }
@@ -79,9 +80,7 @@ proof fn rhombus_cell_count_closed_form(n: int)
 
 #[verifier::loop_isolation(false)]
 fn rhombus(n: i64) -> (cells: i64)
-    requires
-        n >= 1,
-        n <= 1_000_000_000,
+    requires n >= 1
     ensures cells == rhombus_cell_count(n as int)
 {
     let mut cells: i64 = 1;
@@ -89,7 +88,6 @@ fn rhombus(n: i64) -> (cells: i64)
     while i < n
         invariant
             1 <= i <= n,
-            n <= 1_000_000_000,
             cells as int == 2 * (i as int - 1) * (i as int - 1) + 2 * (i as int - 1) + 1,
         decreases n - i,
     {

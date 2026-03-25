@@ -70,12 +70,9 @@ proof fn rhombus_cell_count_closed_form(n: int)
     if r == 0 {
     } else {
         rhombus_cell_count_closed_form(n - 1);
-        assert(row_width(-r, r) == 1) by {
-            assert(abs(-r) == r);
-        };
-        assert(row_width(r, r) == 1) by {
-            assert(abs(r) == r);
-        };
+        assert(row_width(-r, r) == 1);
+        assert(row_width(r, r) == 1);
+        assert(sum_rows(-r, r, r) == row_width(-r, r) + sum_rows(-r + 1, r, r));
         sum_rows_append(-(r - 1), r, r);
         sum_rows_radius_step(-(r - 1), r - 1, r);
     }
@@ -91,8 +88,8 @@ fn rhombus(n: i64) -> (cells: i64)
     while i < n
         invariant
             1 <= i <= n,
-            cells == 2 * (i - 1) * (i - 1) + 2 * (i - 1) + 1,
-        decreases n - i
+            cells as int == 2 * (i as int - 1) * (i as int - 1) + 2 * (i as int - 1) + 1,
+        decreases n - i,
     {
         cells = cells + i * 4;
         i = i + 1;

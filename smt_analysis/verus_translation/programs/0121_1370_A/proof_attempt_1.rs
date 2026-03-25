@@ -42,7 +42,6 @@ proof fn GcdBound(a: int, b: int)
         assert(k >= 2);
         MulLeMonotone(a, 2, k);
     } else {
-        assert(0 < r && r < a);
         assert(Gcd(b, a) == Gcd(a, r));
         assert(r % a == r);
         assert(Gcd(r, a) == Gcd(a, r));
@@ -54,12 +53,10 @@ fn MaximumGCD(n: i64) -> (result: i64)
     requires
         n >= 2,
     ensures
-        exists|a: int, b: int|
-            1 <= a && a < n as int && a < b && b <= n as int
-            && (#[trigger] Gcd(a, b)) == result as int,
-        forall|a: int, b: int|
-            1 <= a && a < n as int && a < b && b <= n as int
-            ==> (#[trigger] Gcd(a, b)) <= result as int,
+        exists|a: int, b: int| #![trigger Gcd(a, b)]
+            1 <= a && a < n as int && a < b && b <= n as int && Gcd(a, b) == result as int,
+        forall|a: int, b: int| #![trigger Gcd(a, b)]
+            (1 <= a && a < n as int && a < b && b <= n as int) ==> Gcd(a, b) <= result as int,
 {
     let result = n / 2;
     let wa = n / 2;
@@ -71,16 +68,18 @@ fn MaximumGCD(n: i64) -> (result: i64)
         assert((wa as int) < (wb as int));
         assert((wb as int) <= n as int);
         assert((wb as int) % (wa as int) == 0);
+        assert(Gcd(wb as int, wa as int) == wa as int);
+        assert((wa as int) % (wb as int) == wa as int);
         assert(Gcd(wa as int, wb as int) == wa as int);
 
         assert forall|ai: int, bi: int|
             1 <= ai && ai < n as int && ai < bi && bi <= n as int
-        implies
-            (#[trigger] Gcd(ai, bi)) <= result as int
+            implies Gcd(ai, bi) <= result as int
         by {
             GcdBound(ai, bi);
         };
     }
+
     result
 }
 
