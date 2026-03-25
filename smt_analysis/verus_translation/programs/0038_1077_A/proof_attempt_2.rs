@@ -35,6 +35,15 @@ proof fn FrogPositionClosedForm(a: int, b: int, k: nat)
 fn FrogJumping(queries: &Vec<(i64, i64, i64)>) -> (results: Vec<i64>)
     requires
         forall|i: int| 0 <= i < queries@.len() ==> queries@[i].2 >= 0,
+        forall|i: int| 0 <= i < queries@.len() ==> {
+            let a = queries@[i].0 as int;
+            let b = queries@[i].1 as int;
+            let half = queries@[i].2 as int / 2;
+            i64::MIN <= a * half && a * half <= i64::MAX
+            && i64::MIN <= b * half && b * half <= i64::MAX
+            && i64::MIN <= a * half - b * half && a * half - b * half <= i64::MAX
+            && i64::MIN <= a * half - b * half + a && a * half - b * half + a <= i64::MAX
+        },
     ensures
         results@.len() == queries@.len(),
         forall|i: int| 0 <= i < queries@.len() ==>

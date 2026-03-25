@@ -56,9 +56,10 @@ fn ehab_construction(x: i64) -> (result: (i64, i64, bool))
             bi = bi + 1;
         }
         if !found {
-            assert forall|b_p: int| ai as int < b_p && b_p <= x as int
+            assert forall|b_p: int| ai as int < b_p <= x as int
                 implies !valid_pair(ai as int, b_p, x as int)
             by {
+                // When 1 <= ai < b_p, ai % b_p == ai >= 1, so a % b != 0
                 assert((ai as int) % b_p == (ai as int));
             };
         }

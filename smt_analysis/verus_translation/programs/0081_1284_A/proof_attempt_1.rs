@@ -12,7 +12,8 @@ spec fn gapja_name(year: int, s: Seq<Seq<char>>, t: Seq<Seq<char>>) -> Seq<char>
 
 #[verifier::external_body]
 fn string_append(s: &mut String, other: &str)
-    ensures s@ == old(s)@ + other@
+    ensures
+        s@ == old(s)@ + other@,
 {
     s.push_str(other)
 }
@@ -35,9 +36,10 @@ fn new_year_naming(n: i64, m: i64, s: &Vec<String>, t: &Vec<String>, queries: &V
 {
     let mut results: Vec<String> = Vec::new();
     let mut i: usize = 0;
+
     while i < queries.len()
         invariant
-            0 <= i <= queries@.len(),
+            i <= queries.len(),
             results@.len() == i as int,
             n > 0 && m > 0,
             s@.len() == n as int,
@@ -49,26 +51,28 @@ fn new_year_naming(n: i64, m: i64, s: &Vec<String>, t: &Vec<String>, queries: &V
                     s@.map_values(|v: String| v@),
                     t@.map_values(|v: String| v@),
                 ),
-        decreases queries@.len() - i,
+        decreases queries.len() - i,
     {
-        let x = queries[i] - 1;
-        assert(queries@[i as int] >= 1);
-        assert(x == queries@[i as int] - 1);
-        assert(x % n == cyclic_index(queries@[i as int] as int, n as int));
-        assert(x % m == cyclic_index(queries@[i as int] as int, m as int));
+        let qi = queries[i];
+        assert(qi >= 1);
+        let x = qi - 1;
+
         let si = (x % n) as usize;
         let ti = (x % m) as usize;
+
+        assert(si as int == cyclic_index(qi as int, n as int));
+        assert(ti as int == cyclic_index(qi as int, m as int));
+
+        assert(s@.map_values(|v: String| v@).len() == n as int);
+        assert(t@.map_values(|v: String| v@).len() == m as int);
+
         let mut name = s[si].clone();
         string_append(&mut name, &t[ti]);
 
-        // Bridge map_values indexing with direct indexing
-        assert(s@.map_values(|v: String| v@).len() == n as int);
-        assert(t@.map_values(|v: String| v@).len() == m as int);
-        assert(s@.map_values(|v: String| v@)[si as int] == s@[si as int]@);
-        assert(t@.map_values(|v: String| v@)[ti as int] == t@[ti as int]@);
-        assert(name@ == s@.map_values(|v: String| v@)[si as int] + t@.map_values(|v: String| v@)[ti as int]);
-        assert(name@ == gapja_name(
-            queries@[i as int] as int,
+        assert(s@.map_values(|v: String| v@)[si as int] =~= s@[si as int]@);
+        assert(t@.map_values(|v: String| v@)[ti as int] =~= t@[ti as int]@);
+        assert(name@ =~= gapja_name(
+            qi as int,
             s@.map_values(|v: String| v@),
             t@.map_values(|v: String| v@),
         ));

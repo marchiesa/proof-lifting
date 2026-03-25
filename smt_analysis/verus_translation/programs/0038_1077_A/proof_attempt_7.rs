@@ -34,11 +34,16 @@ proof fn FrogPositionClosedForm(a: int, b: int, k: nat)
 #[verifier::loop_isolation(false)]
 fn FrogJumping(queries: &Vec<(i64, i64, i64)>) -> (results: Vec<i64>)
     requires
-        forall|i: int| #![trigger queries@[i]]
-            0 <= i < queries@.len() ==>
-            -1_000_000_000 <= queries@[i].0 <= 1_000_000_000
-            && -1_000_000_000 <= queries@[i].1 <= 1_000_000_000
-            && 0 <= queries@[i].2 <= 1_000_000_000,
+        forall|i: int| 0 <= i < queries@.len() ==> queries@[i].2 >= 0,
+        forall|i: int| #![trigger queries@[i]] 0 <= i < queries@.len() ==> {
+            let a = queries@[i].0 as int;
+            let b = queries@[i].1 as int;
+            let half = queries@[i].2 as int / 2;
+            i64::MIN <= a * half && a * half <= i64::MAX
+            && i64::MIN <= b * half && b * half <= i64::MAX
+            && i64::MIN <= a * half - b * half && a * half - b * half <= i64::MAX
+            && i64::MIN <= a * half - b * half + a && a * half - b * half + a <= i64::MAX
+        },
     ensures
         results@.len() == queries@.len(),
         forall|i: int| 0 <= i < queries@.len() ==>
@@ -60,35 +65,10 @@ fn FrogJumping(queries: &Vec<(i64, i64, i64)>) -> (results: Vec<i64>)
                     queries@[j].1 as int,
                     queries@[j].2 as nat,
                 ),
-            forall|j: int| #![trigger queries@[j]]
-                0 <= j < queries@.len() ==>
-                -1_000_000_000 <= queries@[j].0 <= 1_000_000_000
-                && -1_000_000_000 <= queries@[j].1 <= 1_000_000_000
-                && 0 <= queries@[j].2 <= 1_000_000_000,
-        decreases queries@.len() - i,
+        decreases queries.len() - i,
     {
         let (a, b, k) = queries[i];
         let half = k / 2;
-
-        proof {
-            assert((a as int) * (half as int) >= -500_000_000_000_000_000
-                && (a as int) * (half as int) <= 500_000_000_000_000_000) by(nonlinear_arith)
-                requires
-                    a as int >= -1_000_000_000,
-                    a as int <= 1_000_000_000,
-                    half as int >= 0,
-                    half as int <= 500_000_000,
-            ;
-            assert((b as int) * (half as int) >= -500_000_000_000_000_000
-                && (b as int) * (half as int) <= 500_000_000_000_000_000) by(nonlinear_arith)
-                requires
-                    b as int >= -1_000_000_000,
-                    b as int <= 1_000_000_000,
-                    half as int >= 0,
-                    half as int <= 500_000_000,
-            ;
-        }
-
         let mut ans: i64 = a * half - b * half;
         if k % 2 == 1 {
             ans = ans + a;
