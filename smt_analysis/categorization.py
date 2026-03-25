@@ -42,7 +42,7 @@ from smt_analysis.category_checks.category_ematching import (  # noqa: E402
 )
 from smt_analysis.category_checks.category_witness import (  # noqa: E402
     WitnessResult,
-    classify_witness,
+    classify_witness_async,
 )
 
 
@@ -58,7 +58,6 @@ class EssentialAssertion:
     is_equality: bool
     boogie_id: str
     method: str
-    variant_path: str
     variant_source: str
     verification_result: str
     verification_errors: list[str]
@@ -340,7 +339,6 @@ async def _ablate_problem(
                     is_equality=assertion["is_equality"],
                     boogie_id=assertion["boogie_id"],
                     method=assertion["method"],
-                    variant_path=str(variant_path),
                     variant_source=variant_path.read_text(),
                     verification_result=variant_output.result,
                     verification_errors=variant_output.errors,
@@ -369,6 +367,7 @@ async def _categorize_problem(
     *,
     brittle_timeout_seconds: int,
     brittle_failure_threshold: int,
+    brittle_isolate_assertions: bool,
 ) -> ProblemCategorization:
     problem_dir = RESULTS_DIR / problem
     source_file = problem_dir / "verified.dfy"
@@ -396,6 +395,7 @@ async def _categorize_problem(
         source_file,
         timeout_seconds=brittle_timeout_seconds,
         failure_threshold=brittle_failure_threshold,
+        isolate_assertions=brittle_isolate_assertions,
     )
     result.brittle = brittle
     if brittle.brittle:
@@ -414,11 +414,12 @@ async def _categorize_problem(
             timeout=base_args.verification_time_limit,
             bpl_text=bpl_text,
         )
-        assertion_expr = find_assert_expr_in_bpl(bpl_text, essential.boogie_id)
-        witness = (
-            classify_witness(assertion_expr, bpl_text, essential.boogie_id)
-            if assertion_expr is not None
-            else None
+        witness = await classify_witness_async(
+            pool,
+            source_file,
+            essential.boogie_id,
+            timeout=base_args.verification_time_limit,
+            bpl_text=bpl_text,
         )
         with tempfile.TemporaryDirectory(prefix=f"{problem}_category_b_") as tmpdir:
             variant_path = Path(tmpdir) / f"without_{essential.index:02d}.dfy"
@@ -447,6 +448,7 @@ async def run_categorization_pipeline(
     *,
     brittle_timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     brittle_failure_threshold: int = DEFAULT_FAILURE_THRESHOLD,
+    brittle_isolate_assertions: bool = False,
     max_dafny_concurrency: int = 1,
 ) -> CategorizationPipelineResult:
     names = list(problem_names or _default_problem_names())
@@ -459,6 +461,7 @@ async def run_categorization_pipeline(
             base_args,
             brittle_timeout_seconds=brittle_timeout_seconds,
             brittle_failure_threshold=brittle_failure_threshold,
+            brittle_isolate_assertions=brittle_isolate_assertions,
         )
         for name in names
     ]
@@ -500,6 +503,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Classify as brittle if failures >= threshold",
     )
     parser.add_argument(
+        "--brittle-isolate-assertions",
+        action="store_true",
+        help="Pass --isolate-assertions during brittle seed-variation checks",
+    )
+    parser.add_argument(
         "--max-dafny-concurrency",
         type=int,
         default=1,
@@ -526,6 +534,7 @@ async def main() -> int:
         problem_names=args.names,
         brittle_timeout_seconds=args.verification_time_limit,
         brittle_failure_threshold=args.brittle_failure_threshold,
+        brittle_isolate_assertions=args.brittle_isolate_assertions,
         max_dafny_concurrency=args.max_dafny_concurrency,
     )
     out_path = PROJ_ROOT / args.output

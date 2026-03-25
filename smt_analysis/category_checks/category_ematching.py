@@ -74,7 +74,7 @@ class LitExpr:
         return self.value
 
 
-Expr = Union[CompoundExpr, NameExpr, LitExpr]
+type Expr = CompoundExpr | NameExpr | LitExpr
 
 
 def subterms(expr: Expr) -> list[Expr]:
@@ -711,11 +711,6 @@ if __name__ == "__main__":
     import argparse
     import sys
 
-    from smt_analysis.category_checks.category_witness import (
-        classify_witness,
-        _witness_to_dict,
-    )
-
     parser = argparse.ArgumentParser(
         description="Classify an essential assertion: e-matching category and witness confidence."
     )
@@ -752,16 +747,7 @@ if __name__ == "__main__":
         )
     )
 
-    # Also run witness classification if e-matching returned unknown
-    witness_result = None
-    if em_result.category == "unknown" and em_result.assertion_expr is not None:
-        assertion_expr = find_assert_expr_in_bpl(bpl_text, args.boogie_id)
-        if assertion_expr is not None:
-            witness_result = classify_witness(assertion_expr, bpl_text, args.boogie_id)
-
     output = {"ematching": _ematching_to_dict(em_result)}
-    if witness_result is not None:
-        output["witness"] = _witness_to_dict(witness_result)
 
     print(json.dumps(output, indent=2))
     sys.exit(0 if em_result.category != "unknown" else 1)  # noqa: S101

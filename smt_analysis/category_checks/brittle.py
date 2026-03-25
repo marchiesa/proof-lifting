@@ -149,12 +149,14 @@ async def _run_seed_once(
     dfy_file: Path,
     seed: int,
     timeout_seconds: int,
+    isolate_assertions: bool,
 ) -> SeedRunResult:
     output = await pool.run_dafny(
         DafnyArgs(
             file_path=dfy_file,
             verification_time_limit=timeout_seconds,
             timeout_seconds=timeout_seconds + 30,
+            isolate_assertions=isolate_assertions,
             extra_args=["--boogie", f"-randomSeed:{seed}"],
         )
     )
@@ -179,6 +181,7 @@ async def classify_brittleness_async(
     seeds: list[int] | None = None,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     failure_threshold: int = DEFAULT_FAILURE_THRESHOLD,
+    isolate_assertions: bool = False,
 ) -> BrittleProofResult:
     path = Path(dfy_file).resolve()
     if not path.exists():
@@ -186,7 +189,7 @@ async def classify_brittleness_async(
 
     chosen_seeds = list(DEFAULT_SEEDS if seeds is None else seeds)
     seed_results = [
-        await _run_seed_once(pool, path, seed, timeout_seconds)
+        await _run_seed_once(pool, path, seed, timeout_seconds, isolate_assertions)
         for seed in chosen_seeds
     ]
     failed_runs = sum(1 for result in seed_results if result.result != "pass")
@@ -214,6 +217,7 @@ def classify_brittleness(
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     failure_threshold: int = DEFAULT_FAILURE_THRESHOLD,
     max_concurrency: int = 1,
+    isolate_assertions: bool = False,
 ) -> BrittleProofResult:
     pool = DafnyPool(max_concurrency=max_concurrency)
     return asyncio.run(
@@ -223,6 +227,7 @@ def classify_brittleness(
             seeds=seeds,
             timeout_seconds=timeout_seconds,
             failure_threshold=failure_threshold,
+            isolate_assertions=isolate_assertions,
         )
     )
 
@@ -256,6 +261,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=1,
         help="Maximum number of Dafny subprocesses to run concurrently",
     )
+    parser.add_argument(
+        "--isolate-assertions",
+        action="store_true",
+        help="Pass --isolate-assertions during brittle verification runs",
+    )
     return parser
 
 
@@ -267,6 +277,7 @@ def main() -> int:
         timeout_seconds=args.timeout,
         failure_threshold=args.failure_threshold,
         max_concurrency=args.max_concurrency,
+        isolate_assertions=args.isolate_assertions,
     )
     print(json.dumps(asdict(result), indent=2))
     return 0

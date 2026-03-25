@@ -11,11 +11,11 @@ ghost predicate ValidChoice(y: int, b: int, r: int, ny: int, nb: int, nr: int)
 method MaxOrnaments(y: int, b: int, r: int) returns (total: int)
   requires y >= 1 && b >= 2 && r >= 3
   ensures exists ny | 0 <= ny <= y ::
-    ValidChoice(y, b, r, ny, ny + 1, ny + 2) &&
-    total == ny + (ny + 1) + (ny + 2)
+            ValidChoice(y, b, r, ny, ny + 1, ny + 2) &&
+            total == ny + (ny + 1) + (ny + 2)
   ensures forall ny | 0 <= ny <= y ::
-    ValidChoice(y, b, r, ny, ny + 1, ny + 2) ==>
-    ny + (ny + 1) + (ny + 2) <= total
+            ValidChoice(y, b, r, ny, ny + 1, ny + 2) ==>
+              ny + (ny + 1) + (ny + 2) <= total
 {
   var m := y;
   if b - 1 < m { m := b - 1; }
@@ -28,7 +28,7 @@ method MaxOrnaments(y: int, b: int, r: int) returns (total: int)
   // Prove optimality: for any valid ny, ny <= m so 3*ny+3 <= 3*m+3
   forall ny | 0 <= ny <= y
     ensures ValidChoice(y, b, r, ny, ny + 1, ny + 2) ==>
-            ny + (ny + 1) + (ny + 2) <= total
+              ny + (ny + 1) + (ny + 2) <= total
   {
     if ValidChoice(y, b, r, ny, ny + 1, ny + 2) {
       assert ny <= y;

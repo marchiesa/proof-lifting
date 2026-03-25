@@ -9,6 +9,7 @@ from pathlib import Path
 
 PROJ_ROOT = Path(__file__).resolve().parent
 DAFNY_DLL = PROJ_ROOT / "dafny-source" / "Binaries" / "Dafny.dll"
+BOOGIE_PROJ = PROJ_ROOT / "boogie" / "Source" / "BoogieDriver" / "BoogieDriver.csproj"
 
 
 @dataclasses.dataclass
@@ -201,6 +202,76 @@ async def _run_custom_dafny(args: CustomDafnyArgs) -> CustomDafnyOutput:
 
 
 @dataclasses.dataclass
+class BoogieArgs:
+    bpl_file: Path
+    time_limit: int = 60
+    timeout_seconds: int | None = None
+
+
+@dataclasses.dataclass
+class BoogieOutput:
+    command: list[str]
+    return_code: int
+    stdout: str
+    stderr: str
+    elapsed_seconds: float
+    timed_out: bool
+    result: str   # "pass" | "error" | "timeout"
+    errors: list[str]
+    raw_output: str
+
+
+def _classify_boogie_output(raw_output: str) -> tuple[str, list[str]]:
+    lower = raw_output.lower()
+    if "timed out" in lower or "time out" in lower:
+        result = "timeout"
+    elif "0 errors" in raw_output:
+        result = "pass"
+    else:
+        result = "error"
+
+    errors: list[str] = []
+    for line in raw_output.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if "error" in stripped.lower() or "could not be proved" in stripped.lower():
+            errors.append(stripped)
+            if len(errors) >= 10:
+                break
+    return result, errors
+
+
+async def _run_boogie(args: BoogieArgs) -> BoogieOutput:
+    command = [
+        _dotnet(), "run", "--project", str(BOOGIE_PROJ), "--",
+        str(args.bpl_file),
+        f"/timeLimit:{args.time_limit}",
+    ]
+    timeout = args.timeout_seconds or (args.time_limit + 30)
+    return_code, stdout, stderr, elapsed, timed_out = await _run_command(
+        command, timeout_seconds=timeout
+    )
+    raw_output = (stdout or "") + (stderr or "")
+    result, errors = _classify_boogie_output(
+        raw_output if not timed_out else raw_output + "\nTIMED OUT"
+    )
+    if timed_out:
+        result = "timeout"
+    return BoogieOutput(
+        command=command,
+        return_code=return_code,
+        stdout=stdout,
+        stderr=stderr,
+        elapsed_seconds=elapsed,
+        timed_out=timed_out,
+        result=result,
+        errors=errors,
+        raw_output=raw_output,
+    )
+
+
+@dataclasses.dataclass
 class DafnyPool:
     max_concurrency: int = 1
 
@@ -214,3 +285,7 @@ class DafnyPool:
     async def run_custom_dafny(self, args: CustomDafnyArgs) -> CustomDafnyOutput:
         async with self._semaphore:
             return await _run_custom_dafny(args)
+
+    async def run_boogie(self, args: BoogieArgs) -> BoogieOutput:
+        async with self._semaphore:
+            return await _run_boogie(args)
