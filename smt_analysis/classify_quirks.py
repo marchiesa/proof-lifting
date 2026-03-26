@@ -58,10 +58,12 @@ A_PATTERNS = {
         r'\[\.\.[\|]\w+[\|]\]\s*==\s*\w+',   # s[..|s|] == s
         r'\w+\s*==\s*\w+\[\.\.[\|]\w+[\|]\]', # s == s[..|s|]
         r'\[\.\.n\]\s*==',                      # a[..n] == a (common variant)
+        r'\[\.\.[\w\.]+\]\s*==\s*\w+\[?\.\.\]', # a[..n] == a[..] (array variant)
     ],
     "A3-take-append": [
-        r'\[\.\..*\+\s*1\]\s*==\s*\w+\[\.\..*\]\s*\+\s*\[',  # s[..i+1] == s[..i] + [s[i]]
-        r'\+\s*\[\w+\[.*\]\]\s*==\s*\w+\[\.\..*\+\s*1\]',    # s[..i] + [s[i]] == s[..i+1]
+        r'\[\d*\.\..*\+\s*1\]\s*==\s*\w+\[\d*\.\..*\]\s*\+\s*\[',  # s[X..i+1] == s[X..i] + [s[i]]
+        r'\+\s*\[\w+\[.*\]\]\s*==\s*\w+\[\d*\.\..*\+\s*1\]',       # s[X..i] + [s[i]] == s[X..i+1]
+        r'\(\w+\s*\+\s*\[\w+\]\)\[',  # (s + [x])[...] — append then index/slice
     ],
     "A4-append-empty": [
         r'\+\s*\[\]\s*==',   # s + [] == ...
@@ -69,7 +71,7 @@ A_PATTERNS = {
     ],
     "A5-other-seq": [
         r'multiset\(',       # multiset equality
-        r'\[.*\.\.\]\s*==',  # s[i..] == ...
+        r'\[\d+\.\.\]\s*==', # s[i..] == ... (skip/drop)
     ],
 }
 
@@ -115,7 +117,7 @@ def classify_assertion(text: str, context_lines: list[str] = []) -> dict:
             return {"category": "other", "subcategory": "NLA",
                     "confidence": "medium"}
 
-    return {"category": "unclassified", "subcategory": "unknown",
+    return {"category": "needs_review", "subcategory": "unknown",
             "confidence": "low"}
 
 
@@ -163,14 +165,17 @@ def check_brittleness(dfy_path: Path, num_seeds: int = NUM_SEEDS) -> dict:
 # ── Ablation with classification ──────────────────────────────────────
 
 def find_assertions_ast(problem_dir: Path) -> list[dict]:
-    """Find assertions using the AST mapping if available."""
-    ast_path = problem_dir / "artifacts" / "ast_mapping.json"
+    """Find assertions in verified.dfy."""
     dfy_path = problem_dir / "verified.dfy"
 
     if not dfy_path.exists():
         return []
 
-    code = dfy_path.read_text()
+    return find_assertions_ast_from_code(dfy_path.read_text())
+
+
+def find_assertions_ast_from_code(code: str) -> list[dict]:
+    """Find all assert statements in Dafny code."""
     asserts = []
     lines = code.split("\n")
     for i, line in enumerate(lines):
@@ -228,13 +233,29 @@ def classify_problem(problem_name: str, check_brittle: bool = True) -> dict:
     code = dfy_path.read_text()
     asserts = find_assertions_ast(problem_dir)
 
-    # Step 1: Brittleness check on the whole program (10 seeds, parallel)
+    # Check if there's a verified_not_brittle.dfy (pre-fixed brittle program)
+    not_brittle_path = problem_dir / "verified_not_brittle.dfy"
+    has_fixed = not_brittle_path.exists()
+
+    # Step 1: Brittleness check
+    # If we have a fixed version, check brittleness on the FIXED version
+    # (the original is known-brittle, we want to verify the fix is stable)
     brittleness = None
     if check_brittle:
-        brittleness = check_brittleness(dfy_path, num_seeds=NUM_SEEDS)
+        check_path = not_brittle_path if has_fixed else dfy_path
+        brittleness = check_brittleness(check_path, num_seeds=NUM_SEEDS)
 
-    if brittleness and brittleness["is_brittle"]:
-        # Program is brittle — classify entire thing as C, skip ablation
+    is_brittle = brittleness and brittleness["is_brittle"]
+
+    was_originally_brittle = has_fixed  # if we have a fixed file, original was brittle
+    if has_fixed and not is_brittle:
+        # Use the fixed version for ablation
+        code = not_brittle_path.read_text()
+        asserts = find_assertions_ast_from_code(code)
+        source_file = not_brittle_path
+        print(f"  (fixed, {len(asserts)} assertions)", end="", flush=True)
+    elif is_brittle:
+        # Still brittle (even the fixed version, or no fixed version)
         return {
             "problem": problem_name,
             "total_assertions": len(asserts),
@@ -243,17 +264,22 @@ def classify_problem(problem_name: str, check_brittle: bool = True) -> dict:
             "essential_count": 0,
             "essential": [],
             "categories": {"C": {"C1-seed-sensitive": len(asserts)}},
-            "note": f"Brittle: passes {brittleness['passes']}/{brittleness['total_seeds']} seeds",
+            "note": f"Brittle: passes {brittleness['passes']}/{brittleness['total_seeds']} seeds"
+                    + (", has verified_not_brittle.dfy but still brittle" if has_fixed else ""),
         }
+    else:
+        was_originally_brittle = False
+        source_file = dfy_path
 
     if not asserts:
         return {"problem": problem_name, "total_assertions": 0,
-                "is_brittle": False, "brittleness": brittleness,
+                "is_brittle": is_brittle, "brittleness": brittleness,
                 "essential": [], "categories": {}}
 
     tmp = problem_dir / "tmp_classify.dfy"
 
     # Step 2: Ablation — remove each assertion and check
+    # For brittle programs: also check if removal causes brittleness (not just failure)
     essential = []
     non_essential = []
 
@@ -264,8 +290,30 @@ def classify_problem(problem_name: str, check_brittle: bool = True) -> dict:
         a["classification"] = classification
 
         if not ok:
+            # Fails with default seed — essential
             a["essential"] = True
+            a["failure_mode"] = "verification_failed"
             essential.append(a)
+        elif was_originally_brittle:
+            # Program was originally brittle — check if removing this assertion
+            # makes the fixed version brittle again
+            tmp.write_text(stripped_code)
+            brit_check = check_brittleness(tmp, num_seeds=NUM_SEEDS)
+            if brit_check["is_brittle"] or not brit_check["always_passes"]:
+                a["essential"] = True
+                a["failure_mode"] = "causes_brittleness"
+                a["removal_brittleness"] = brit_check
+                # Override classification to C (brittle)
+                a["classification"] = {
+                    "category": "C",
+                    "subcategory": "C1-seed-sensitive",
+                    "confidence": "high",
+                    "note": f"Removal causes brittleness: {brit_check['passes']}/{brit_check['total_seeds']} seeds pass",
+                }
+                essential.append(a)
+            else:
+                a["essential"] = False
+                non_essential.append(a)
         else:
             a["essential"] = False
             non_essential.append(a)
@@ -283,7 +331,7 @@ def classify_problem(problem_name: str, check_brittle: bool = True) -> dict:
     return {
         "problem": problem_name,
         "total_assertions": len(asserts),
-        "is_brittle": False,
+        "is_brittle": is_brittle,
         "brittleness": brittleness,
         "essential_count": len(essential),
         "non_essential_count": len(non_essential),
@@ -361,6 +409,7 @@ def main():
     total_B = 0
     total_C = 0
     total_other = 0
+    total_review = 0
     total_essential = 0
     brittle_programs = []
 
@@ -382,6 +431,7 @@ def main():
             if cat == "A": total_A += 1
             elif cat == "B": total_B += 1
             elif cat == "C": total_C += 1
+            elif cat == "needs_review": total_review += 1
             else: total_other += 1
 
         if ess > 0:
@@ -399,6 +449,7 @@ def main():
     print(f"  A (missing axioms): {total_A}")
     print(f"  B (e-matching):     {total_B}")
     print(f"  C (brittleness):    {total_C}")
+    print(f"  Needs review:       {total_review}")
     print(f"  Other:              {total_other}")
     print(f"Brittle programs:     {len(brittle_programs)}")
     if brittle_programs:
