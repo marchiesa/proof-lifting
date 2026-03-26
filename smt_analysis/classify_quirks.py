@@ -59,19 +59,40 @@ A_PATTERNS = {
         r'\w+\s*==\s*\w+\[\.\.[\|]\w+[\|]\]', # s == s[..|s|]
         r'\[\.\.n\]\s*==',                      # a[..n] == a (common variant)
         r'\[\.\.[\w\.]+\]\s*==\s*\w+\[?\.\.\]', # a[..n] == a[..] (array variant)
+        r'\[\.\.idx\]\s*==',                     # events[..idx] == events
     ],
     "A3-take-append": [
         r'\[\d*\.\..*\+\s*1\]\s*==\s*\w+\[\d*\.\..*\]\s*\+\s*\[',  # s[X..i+1] == s[X..i] + [s[i]]
         r'\+\s*\[\w+\[.*\]\]\s*==\s*\w+\[\d*\.\..*\+\s*1\]',       # s[X..i] + [s[i]] == s[X..i+1]
         r'\(\w+\s*\+\s*\[\w+\]\)\[',  # (s + [x])[...] — append then index/slice
+        r'\[\.\..*\]\s*\+\s*\[.*\]\s*==\s*\w+\[\.\..*\+\s*2\]',    # s[..i] + [s[i], s[i+1]] == s[..i+2]
     ],
-    "A4-append-empty": [
-        r'\+\s*\[\]\s*==',   # s + [] == ...
-        r'==\s*.*\+\s*\[\]', # ... == s + []
+    "A4-split-concat": [
+        r'==\s*\w+\[\.\..*\]\s*\+\s*\w+\[.*\.\.\]',  # s == s[..i] + s[i..]
+        r'\w+\[\.\..*\]\s*\+\s*\w+\[.*\.\.\]\s*==',   # s[..i] + s[i..] == s
+        r'==\s*\[\w+\[0\]\]\s*\+\s*\w+\[1\.\.\]',     # s == [s[0]] + s[1..]
+        r'\[\w+\[0\]\]\s*\+\s*\w+\[1\.\.\]\s*==',     # [s[0]] + s[1..] == s
+        r'==\s*\w+\[\.\..*\]\s*\+\s*\[\w+\[',          # r == r[..n-1] + [r[n-1]]
+        r'==\s*\w+\s*\+\s*\[\w+\[[\|]\w+[\|]\s*-\s*1\]\]',  # s == init + [s[|s|-1]]
+        r'==\s*left\s*\+\s*right',                      # s == left + right
+        r'left\s*\+\s*right\s*==',                      # left + right == s
     ],
-    "A5-other-seq": [
-        r'multiset\(',       # multiset equality
-        r'\[\d+\.\.\]\s*==', # s[i..] == ... (skip/drop)
+    "A5-append-assoc": [
+        r'\+\s*\[\]\s*==',                              # s + [] == ...
+        r'==\s*.*\+\s*\[\]',                            # ... == s + []
+        r'\+\s*\[.*,.*\]\s*==\s*\(',                    # s + [a, b] == (s + [a]) + [b]
+        r'\(\w+\s*\+\s*\[\w+\]\)\s*\+\s*\[\w+\]',      # (s + [a]) + [b]
+        r'\+\s*\w+\s*==\s*\w+\s*$',                     # a + b == a (append empty)
+    ],
+    "A6-other-seq": [
+        r'multiset\(',                                   # multiset equality
+        r'\[\d+\.\.\]\s*==',                             # s[i..] == ... (skip/drop)
+        r'\[\.\.[\|]\w+[\|]\s*-\s*1\]\s*==',            # s[..|s|-1] == ... (drop-last)
+        r'==\s*.*\+\s*\w+\[\.\.[\|]\w+[\|]\s*-\s*1\]', # ... == a + b[..|b|-1]
+        r'==\s*seq\(',                                   # s[..n] == seq(n, ...)
+        r'seq\(.*\)\s*==',                               # seq(n, ...) == ...
+        r'==\s*\w+List\(',                               # afterRemoval == EvenList(...)
+        r'\w+List\(.*\)\s*\+\s*\w+Seq\(',               # EvenList(...) + RangeSeq(...)
     ],
 }
 
@@ -98,6 +119,22 @@ def classify_assertion(text: str, context_lines: list[str] = []) -> dict:
         for pat in patterns:
             if re.search(pat, text_stripped):
                 return {"category": "A", "subcategory": cat, "confidence": "high"}
+
+    # A catch-all: any equality assertion with sequence operations on both sides
+    if "==" in text_stripped and re.search(r'\[\.\.|\[\d+\.\.|\.len|seq\(', text_stripped):
+        # Has == and some sequence operation — likely A
+        return {"category": "A", "subcategory": "A6-other-seq", "confidence": "medium"}
+
+    # A: frame conditions — element equality after sequence update
+    if re.search(r'\w+\[\w+\]\s*==\s*\w+_before\[\w+\]', text_stripped):
+        return {"category": "A", "subcategory": "A6-other-seq", "confidence": "medium",
+                "note": "frame condition"}
+    if re.search(r'new\w+\[.*\]\s*==\s*\w+\[', text_stripped):
+        return {"category": "A", "subcategory": "A6-other-seq", "confidence": "medium",
+                "note": "element after update"}
+    if re.search(r"\w+'\[\w+\]\s*==\s*\w+\[", text_stripped):
+        return {"category": "A", "subcategory": "A6-other-seq", "confidence": "medium",
+                "note": "element after update"}
 
     # Check B patterns (e-matching)
     for cat, patterns in B_PATTERNS.items():
@@ -175,37 +212,81 @@ def find_assertions_ast(problem_dir: Path) -> list[dict]:
 
 
 def find_assertions_ast_from_code(code: str) -> list[dict]:
-    """Find all assert statements in Dafny code."""
+    """Find all assert statements in Dafny code, including multiline."""
     asserts = []
     lines = code.split("\n")
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith("assert ") and ";" in stripped:
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
+        if stripped.startswith("assert "):
+            start_line = i
+            indent = len(lines[i]) - len(lines[i].lstrip())
+            # Collect full assertion text (may span multiple lines)
+            full_text = stripped
+            j = i
+            # Check if this line has a semicolon (single-line assert)
+            # but also handle "assert ... by {" blocks
+            if ";" not in stripped or stripped.endswith("{"):
+                # Multiline: keep reading until we find the closing ; or by { } block
+                j = i + 1
+                depth = stripped.count("{") - stripped.count("}")
+                while j < len(lines):
+                    line_j = lines[j].strip()
+                    full_text += " " + line_j
+                    depth += line_j.count("{") - line_j.count("}")
+                    if depth <= 0 and ";" in line_j:
+                        break
+                    if depth <= 0 and line_j == "}":
+                        break
+                    j += 1
+            # Also handle "by {" block after the semicolon
+            end_line = j
+            # Check if next non-empty line starts a "by" block
+            k = j + 1
+            while k < len(lines) and lines[k].strip() == "":
+                k += 1
+            if k < len(lines) and lines[k].strip().startswith("by"):
+                # Include the by block
+                depth = 0
+                while k < len(lines):
+                    line_k = lines[k].strip()
+                    full_text += " " + line_k
+                    depth += line_k.count("{") - line_k.count("}")
+                    if depth <= 0 and "{" in line_k:
+                        # Found closing brace
+                        k2 = k + 1
+                        while k2 < len(lines):
+                            line_k2 = lines[k2].strip()
+                            full_text += " " + line_k2
+                            depth += line_k2.count("{") - line_k2.count("}")
+                            if depth <= 0:
+                                end_line = k2
+                                break
+                            k2 += 1
+                        break
+                    k += 1
+
             asserts.append({
-                "line": i + 1,
-                "text": stripped,
-                "indent": len(line) - len(line.lstrip()),
+                "line": start_line + 1,
+                "end_line": end_line + 1,
+                "text": " ".join(full_text.split()),  # normalize whitespace
+                "indent": indent,
             })
+            i = end_line + 1
+        else:
+            i += 1
     return asserts
 
 
-def remove_assertion(code: str, line_num: int) -> str:
-    """Comment out a single assertion by line number."""
+def remove_assertion(code: str, line_num: int, end_line_num: int = None) -> str:
+    """Comment out an assertion by line range."""
     lines = code.split("\n")
-    idx = line_num - 1
-    # Handle assert ... by { } blocks
-    stripped = lines[idx].strip()
-    if stripped.startswith("assert "):
-        lines[idx] = "// REMOVED: " + lines[idx].lstrip()
-        # Check for by { } block
-        if stripped.endswith("{") or (idx + 1 < len(lines) and lines[idx+1].strip() == "{"):
-            depth = 0
-            for j in range(idx, len(lines)):
-                depth += lines[j].count("{") - lines[j].count("}")
-                if j > idx:
-                    lines[j] = "// REMOVED: " + lines[j].lstrip()
-                if depth <= 0:
-                    break
+    start = line_num - 1
+    if end_line_num is None:
+        end_line_num = line_num
+    end = end_line_num - 1
+    for j in range(start, min(end + 1, len(lines))):
+        lines[j] = "// REMOVED: " + lines[j].lstrip()
     return "\n".join(lines)
 
 
@@ -284,7 +365,7 @@ def classify_problem(problem_name: str, check_brittle: bool = True) -> dict:
     non_essential = []
 
     for a in asserts:
-        stripped_code = remove_assertion(code, a["line"])
+        stripped_code = remove_assertion(code, a["line"], a.get("end_line", a["line"]))
         ok = verify_code(stripped_code, tmp)
         classification = classify_assertion(a["text"])
         a["classification"] = classification
