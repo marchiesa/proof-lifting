@@ -281,7 +281,7 @@ method Letter(grid: seq<string>) returns (result: seq<string>)
   //   assert left <= c0 < right;
   // }
   // assert exists c {:trigger grid[bot][c]} | left <= c < right :: grid[bottom - 1][c] == '*';
-  assert exists c {:trigger grid[bottom - 1][c]} | left <= c < right :: grid[bottom - 1][c] == '*' by {
+  assert exists c {:trigger grid[bottom - 1][c]} | left <= c < right :: grid[bottom - 1][c] == '*' by { // Human: A exists, constructing witness inside by block
     var c0 :| 0 <= c0 < |grid[bot]| && grid[bottom - 1][c0] == '*';
     // assert left <= c0 < right;
   }
@@ -318,7 +318,7 @@ method Letter(grid: seq<string>) returns (result: seq<string>)
 
   // === PROVE POSTCONDITION ===
   // assert IsSubRectangle(grid, result, top, bottom, left, right);
-  assert IsMinimalBoundingBox(grid, result, top, bottom, left, right); // Essential
+  assert IsMinimalBoundingBox(grid, result, top, bottom, left, right); // Other | Human: Not sure
   // assert 0 <= top < |grid|;
   // assert 0 <= bottom <= |grid|;
   // assert 0 <= left < |grid[0]|;

@@ -44,6 +44,10 @@ from smt_analysis.category_checks.category_witness import (  # noqa: E402
     WitnessResult,
     classify_witness_async,
 )
+from smt_analysis.category_checks.category_witness_ablation import (  # noqa: E402
+    AblationWitnessResult,
+    classify_witness_ablation_async,
+)
 
 
 RESULTS_DIR = PROJ_ROOT / "smt_analysis" / "results"
@@ -69,7 +73,25 @@ class AssertionCategorization:
     assertion: EssentialAssertion
     ematching: EmatchingResult | None = None
     witness: WitnessResult | None = None
+    witness_ablation: AblationWitnessResult | None = None
     category_b: CategoryBResult | None = None
+
+    @property
+    def is_existential(self) -> bool:
+        """True if either witness method flagged this assertion."""
+        static_hit = self.witness is not None and self.witness.confidence != "none"
+        ablation_hit = self.witness_ablation is not None and self.witness_ablation.confidence != "none"
+        return static_hit or ablation_hit
+
+    @property
+    def witness_methods(self) -> list[str]:
+        """Which method(s) classified this as an existential witness."""
+        methods = []
+        if self.witness is not None and self.witness.confidence != "none":
+            methods.append(f"static({self.witness.confidence})")
+        if self.witness_ablation is not None and self.witness_ablation.confidence != "none":
+            methods.append(f"ablation({self.witness_ablation.confidence})")
+        return methods
 
 
 @dataclass
@@ -414,12 +436,21 @@ async def _categorize_problem(
             timeout=base_args.verification_time_limit,
             bpl_text=bpl_text,
         )
-        witness = await classify_witness_async(
-            pool,
-            source_file,
-            essential.boogie_id,
-            timeout=base_args.verification_time_limit,
-            bpl_text=bpl_text,
+        witness, witness_ablation = await asyncio.gather(
+            classify_witness_async(
+                pool,
+                source_file,
+                essential.boogie_id,
+                timeout=base_args.verification_time_limit,
+                bpl_text=bpl_text,
+            ),
+            classify_witness_ablation_async(
+                pool,
+                source_file,
+                essential.boogie_id,
+                timeout=base_args.verification_time_limit,
+                bpl_text=bpl_text,
+            ),
         )
         with tempfile.TemporaryDirectory(prefix=f"{problem}_category_b_") as tmpdir:
             variant_path = Path(tmpdir) / f"without_{essential.index:02d}.dfy"
@@ -435,6 +466,7 @@ async def _categorize_problem(
                 assertion=essential,
                 ematching=ematching,
                 witness=witness,
+                witness_ablation=witness_ablation,
                 category_b=category_b,
             )
         )
