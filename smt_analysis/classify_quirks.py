@@ -228,13 +228,32 @@ def classify_problem(problem_name: str, check_brittle: bool = True) -> dict:
     code = dfy_path.read_text()
     asserts = find_assertions_ast(problem_dir)
 
+    # Step 1: Brittleness check on the whole program (10 seeds, parallel)
+    brittleness = None
+    if check_brittle:
+        brittleness = check_brittleness(dfy_path, num_seeds=NUM_SEEDS)
+
+    if brittleness and brittleness["is_brittle"]:
+        # Program is brittle — classify entire thing as C, skip ablation
+        return {
+            "problem": problem_name,
+            "total_assertions": len(asserts),
+            "is_brittle": True,
+            "brittleness": brittleness,
+            "essential_count": 0,
+            "essential": [],
+            "categories": {"C": {"C1-seed-sensitive": len(asserts)}},
+            "note": f"Brittle: passes {brittleness['passes']}/{brittleness['total_seeds']} seeds",
+        }
+
     if not asserts:
         return {"problem": problem_name, "total_assertions": 0,
+                "is_brittle": False, "brittleness": brittleness,
                 "essential": [], "categories": {}}
 
     tmp = problem_dir / "tmp_classify.dfy"
 
-    # Ablation: remove each assertion and check
+    # Step 2: Ablation — remove each assertion and check
     essential = []
     non_essential = []
 
@@ -251,25 +270,6 @@ def classify_problem(problem_name: str, check_brittle: bool = True) -> dict:
             a["essential"] = False
             non_essential.append(a)
 
-    # Brittleness check on essential assertions
-    # For each essential assertion, we already know it fails with default seed.
-    # Check if it fails with ALL seeds (truly essential) or only some (brittle).
-    if check_brittle and essential:
-        for a in essential:
-            stripped_code = remove_assertion(code, a["line"])
-            # Write to a unique tmp file per assertion to avoid conflicts
-            tmp_brit = problem_dir / f"tmp_brit_{a['line']}.dfy"
-            tmp_brit.write_text(stripped_code)
-            brit = check_brittleness(tmp_brit, num_seeds=NUM_SEEDS)
-            a["brittleness"] = brit
-            tmp_brit.unlink(missing_ok=True)
-            if brit["is_brittle"]:
-                # Override classification — this is a brittle proof
-                a["classification"]["category"] = "C"
-                a["classification"]["subcategory"] = "C1-seed-sensitive"
-                a["classification"]["confidence"] = "high"
-                a["classification"]["note"] = f"passes {brit['passes']}/{brit['total_seeds']} seeds"
-
     tmp.unlink(missing_ok=True)
 
     # Aggregate categories
@@ -283,6 +283,8 @@ def classify_problem(problem_name: str, check_brittle: bool = True) -> dict:
     return {
         "problem": problem_name,
         "total_assertions": len(asserts),
+        "is_brittle": False,
+        "brittleness": brittleness,
         "essential_count": len(essential),
         "non_essential_count": len(non_essential),
         "essential": essential,
@@ -314,6 +316,44 @@ def main():
     if args.limit:
         problems = problems[:args.limit]
 
+    if args.brittleness_only:
+        print(f"Brittleness check: {len(problems)} problems ({NUM_SEEDS} seeds each, parallel)")
+        results = {}
+        for i, prob in enumerate(problems):
+            dfy = RESULTS_DIR / prob / "verified.dfy"
+            if not dfy.exists():
+                print(f"[{i+1}/{len(problems)}] {prob}... SKIP (no verified.dfy)")
+                continue
+            print(f"[{i+1}/{len(problems)}] {prob}...", end=" ", flush=True)
+            brit = check_brittleness(dfy, num_seeds=NUM_SEEDS)
+            results[prob] = brit
+            if brit["is_brittle"]:
+                print(f"BRITTLE ({brit['passes']}/{brit['total_seeds']} seeds)")
+            elif brit["always_fails"]:
+                print(f"ALWAYS FAILS")
+            else:
+                print(f"STABLE ({brit['passes']}/{brit['total_seeds']})")
+
+        brittle = [p for p, b in results.items() if b["is_brittle"]]
+        stable = [p for p, b in results.items() if b["always_passes"]]
+        always_fail = [p for p, b in results.items() if b["always_fails"]]
+        print(f"\n{'='*60}")
+        print(f"BRITTLENESS SUMMARY")
+        print(f"{'='*60}")
+        print(f"Stable:      {len(stable)}")
+        print(f"Brittle:     {len(brittle)}")
+        print(f"Always fail: {len(always_fail)}")
+        if brittle:
+            print(f"\nBrittle programs:")
+            for p in brittle:
+                b = results[p]
+                print(f"  {p}: {b['passes']}/{b['total_seeds']} seeds pass")
+
+        out = RESULTS_DIR / "brittleness_results.json"
+        out.write_text(json.dumps(results, indent=2, default=str))
+        print(f"\nSaved to {out}")
+        return
+
     print(f"Classifying {len(problems)} problems (seeds={NUM_SEEDS}, timeout={VERIFY_TIMEOUT}s)")
 
     all_results = []
@@ -322,11 +362,18 @@ def main():
     total_C = 0
     total_other = 0
     total_essential = 0
+    brittle_programs = []
 
     for i, prob in enumerate(problems):
-        print(f"[{i+1}/{len(problems)}] {prob}...")
+        print(f"[{i+1}/{len(problems)}] {prob}...", end=" ", flush=True)
         r = classify_problem(prob, check_brittle=not args.no_brittleness)
         all_results.append(r)
+
+        if r.get("is_brittle"):
+            brittle_programs.append(prob)
+            brit = r["brittleness"]
+            print(f"BRITTLE ({brit['passes']}/{brit['total_seeds']} seeds)")
+            continue
 
         ess = r.get("essential_count", 0)
         total_essential += ess
@@ -340,7 +387,9 @@ def main():
         if ess > 0:
             cats = r.get("categories", {})
             cat_str = ", ".join(f"{k}:{sum(v.values())}" for k, v in cats.items())
-            print(f"  {ess} essential — {cat_str}")
+            print(f"{ess} essential — {cat_str}")
+        else:
+            print(f"0 essential")
 
     # Summary
     print(f"\n{'='*60}")
@@ -351,6 +400,10 @@ def main():
     print(f"  B (e-matching):     {total_B}")
     print(f"  C (brittleness):    {total_C}")
     print(f"  Other:              {total_other}")
+    print(f"Brittle programs:     {len(brittle_programs)}")
+    if brittle_programs:
+        for p in brittle_programs:
+            print(f"  {p}")
 
     # Save
     out = RESULTS_DIR / "classification_results.json"
