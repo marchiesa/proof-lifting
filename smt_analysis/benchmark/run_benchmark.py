@@ -44,16 +44,23 @@ from pathlib import Path
 DAFNY = os.environ.get("DOTNET8", os.environ.get("DOTNET", "dotnet"))
 DAFNY_DLL = os.environ.get("DAFNY_DLL", "Dafny.dll")
 Z3_PATH = os.environ.get("Z3_PATH", None)
+VERUS_BIN = os.environ.get("VERUS_BIN", "/tmp/verus_install/verus-arm64-macos/verus")
+VERUS_SIF = os.environ.get("VERUS_SIF", "")  # singularity container for Leonardo
 TIMEOUT_PER_PROBLEM = 500  # seconds
 MAX_TOKENS = 8192  # reasoning models need budget for thinking + code
-VERIFY_TIMEOUT = 60  # seconds per dafny verify call
+VERIFY_TIMEOUT = 60  # seconds per verify call
+LANG = "dafny"  # or "verus" — set via --lang flag
 
 
 # ---------------------------------------------------------------------------
 # LLM backends
 # ---------------------------------------------------------------------------
 
-SYSTEM_MSG = "You are a Dafny verification expert. Output only code, no explanations."
+_SYSTEM_MSGS = {
+    "dafny": "You are a Dafny verification expert. Output only code, no explanations.",
+    "verus": "You are a Verus verification expert. Output only code, no explanations.",
+}
+SYSTEM_MSG = _SYSTEM_MSGS["dafny"]  # updated in main() based on --lang
 
 # Model config from env (set by launch.sh) or defaults for gpt-oss
 _CHAT_API = os.environ.get("BENCHMARK_CHAT_API", "false").lower() == "true"
@@ -195,8 +202,14 @@ def call_llama(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
 # ---------------------------------------------------------------------------
 
 def extract_code(response: str) -> str | None:
+    """Extract code from LLM response (Dafny or Verus)."""
+    if LANG == "verus":
+        return _extract_verus_code(response)
+    return _extract_dafny_code(response)
+
+
+def _extract_dafny_code(response: str) -> str | None:
     """Extract Dafny code from LLM response."""
-    # Strategy 1: <DAFNY_CODE> tags
     for pattern in [
         r'<DAFNY_CODE>\s*(.*?)(?:</DAFNY_CODE>|$)',
         r'<code>\s*(.*?)(?:</code>|$)',
@@ -205,18 +218,32 @@ def extract_code(response: str) -> str | None:
         m = re.search(pattern, response, re.DOTALL | re.IGNORECASE)
         if m:
             return m.group(1).strip()
-
-    # Strategy 2: Markdown
     for pattern in [r'```dafny\s*(.*?)\s*```', r'```\s*(.*?)\s*```']:
         m = re.search(pattern, response, re.DOTALL)
         if m:
             return m.group(1).strip()
-
-    # Strategy 3: Find from first 'method' or 'ghost' or 'predicate'
     m = re.search(r'((?:ghost\s+)?(?:method|function|predicate)\s+\w+.*)', response, re.DOTALL)
     if m:
         return m.group(1).strip()
+    return None
 
+
+def _extract_verus_code(response: str) -> str | None:
+    """Extract Verus code from LLM response."""
+    for pattern in [
+        r'<VERUS_CODE>\s*(.*?)(?:</VERUS_CODE>|$)',
+        r'<code>\s*(.*?)(?:</code>|$)',
+    ]:
+        m = re.search(pattern, response, re.DOTALL | re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+    for pattern in [r'```rust\s*(.*?)\s*```', r'```\s*(.*?)\s*```']:
+        m = re.search(pattern, response, re.DOTALL)
+        if m:
+            return m.group(1).strip()
+    m = re.search(r'(use vstd::prelude::\*;.*)', response, re.DOTALL)
+    if m:
+        return m.group(1).strip()
     return None
 
 
@@ -374,13 +401,131 @@ def run_dafny(code: str, tmp_dir: Path,
     return verified, output.strip(), round(elapsed, 2), spec_msg
 
 
+def run_verus(code: str, tmp_dir: Path,
+              original_path: Path | None = None) -> tuple[bool, str, float, str]:
+    """Write code to temp file, run verus.
+
+    Returns (success, output, time, integrity_msg).
+    """
+    rs_path = tmp_dir / "attempt.rs"
+    rs_path.write_text(code)
+
+    if VERUS_SIF:
+        cmd = [
+            "singularity", "exec",
+            "--bind", "/leonardo_work:/leonardo_work",
+            "--bind", "/leonardo/home:/leonardo/home",
+            "--env", f"PATH={os.environ.get('CARGO_BIN', '/usr/bin')}:$PATH",
+            "--env", f"RUSTUP_HOME={os.environ.get('RUSTUP_HOME', '')}",
+            "--env", f"CARGO_HOME={os.environ.get('CARGO_HOME', '')}",
+            VERUS_SIF,
+            VERUS_BIN, str(rs_path),
+            "--rlimit", str(VERIFY_TIMEOUT),
+        ]
+    else:
+        cmd = [VERUS_BIN, str(rs_path), "--rlimit", str(VERIFY_TIMEOUT)]
+
+    t0 = time.perf_counter()
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                               timeout=VERIFY_TIMEOUT + 60)
+        output = result.stdout + "\n" + result.stderr
+    except subprocess.TimeoutExpired:
+        output = "TIMEOUT: verus exceeded time limit"
+    except FileNotFoundError:
+        output = f"ERROR: verus not found at {VERUS_BIN}"
+
+    elapsed = time.perf_counter() - t0
+    verified = "0 errors" in output and result.returncode == 0
+
+    # Integrity check via skeleton comparison
+    integrity_msg = ""
+    if original_path and verified:
+        try:
+            benchmark_dir = Path(__file__).parent.resolve()
+            sys.path.insert(0, str(benchmark_dir.parent / "verus_translation"))
+            from verus_integrity_check import check_integrity
+            ok, integrity_msg = check_integrity(original_path, rs_path)
+            if not ok:
+                verified = False
+                output += f"\nINTEGRITY_FAILED: {integrity_msg}"
+        except Exception as e:
+            integrity_msg = f"integrity check error: {e}"
+
+    return verified, output.strip(), round(elapsed, 2), integrity_msg
+
+
+def run_verify(code: str, tmp_dir: Path,
+               original_ast_path: Path | None = None) -> tuple[bool, str, float, str]:
+    """Run verification (Dafny or Verus based on LANG)."""
+    if LANG == "verus":
+        return run_verus(code, tmp_dir, original_ast_path)
+    return run_dafny(code, tmp_dir, original_ast_path)
+
+
 # ---------------------------------------------------------------------------
 # Prompt building
 # ---------------------------------------------------------------------------
 
-def build_prompt(stripped_code: str, dafny_error: str | None = None,
+def build_prompt(stripped_code: str, error_msg: str | None = None,
                  attempt: int = 1) -> str:
-    """Build prompt for the LLM."""
+    """Build prompt for the LLM (Dafny or Verus)."""
+    if LANG == "verus":
+        return _build_verus_prompt(stripped_code, error_msg, attempt)
+    return _build_dafny_prompt(stripped_code, error_msg, attempt)
+
+
+def _build_verus_prompt(stripped_code: str, error_msg: str | None = None,
+                        attempt: int = 1) -> str:
+    code_tag = "VERUS_CODE"
+    lang_block = "rust"
+    if attempt == 1 or error_msg is None:
+        return f"""The following Verus program has a correct implementation and specification, but verification fails because some `assert` statements and `proof` blocks are missing. The program verified successfully before these were removed.
+
+RULES — read carefully:
+1. Add `assert(...)` statements and `proof {{ }}` blocks to make `verus` verification pass.
+2. You may add `proof fn` helper lemmas if needed.
+3. You MUST NOT modify ANY existing code. Do not change variable names, assignments, control flow, loop bodies, if/else branches, return statements, or any expression.
+4. You MUST NOT modify ANY formal specification. Do not change `requires`, `ensures`, `invariant`, `decreases`, `spec fn` bodies, or function signatures.
+5. Any modification to existing code or specifications will be automatically detected and rejected.
+
+Verus hints:
+- Use `assert(expr)` for simple assertions
+- Use `assert(expr) by {{ ... }}` for assertions needing proof steps
+- Use `assert(expr) by(nonlinear_arith) requires ...;` for nonlinear arithmetic
+- Use `assert forall|i: int| ... implies ... by {{ ... }};` for quantified assertions
+- Use `proof {{ lemma_call(args); }}` to invoke helper lemmas in exec functions
+- Use `=~=` for extensional sequence equality
+
+Return the complete Verus program with your additions inside <{code_tag}> tags.
+
+```{lang_block}
+{stripped_code}
+```
+
+<{code_tag}>
+"""
+    else:
+        return f"""Your previous attempt failed verification. Here is the error:
+
+{error_msg}
+
+REMINDER: Do NOT modify any existing code or specifications. Only add `assert` statements, `proof` blocks, and optionally helper `proof fn` lemmas.
+
+The original program (without assertions) is:
+
+```{lang_block}
+{stripped_code}
+```
+
+Fix the assertions and return the complete program inside <{code_tag}> tags.
+
+<{code_tag}>
+"""
+
+
+def _build_dafny_prompt(stripped_code: str, dafny_error: str | None = None,
+                        attempt: int = 1) -> str:
     if attempt == 1 or dafny_error is None:
         return f"""The following Dafny program has a correct implementation and specification, but verification fails because some `assert` statements are missing. The program verified successfully before these assertions were removed.
 
@@ -427,12 +572,23 @@ def run_problem(problem_name: str, inputs_dir: Path, output_dir: Path,
     """Run benchmark on a single problem. Returns result dict."""
     problem_input = inputs_dir / problem_name
     meta = json.loads((problem_input / "meta.json").read_text())
-    stripped_code = (problem_input / "stripped.dfy").read_text()
 
-    # Reference AST for spec comparison
-    ref_ast_path = problem_input / "reference_ast.json"
-    if not ref_ast_path.exists():
+    # Language-specific source file
+    if LANG == "verus":
+        stripped_code = (problem_input / "stripped.rs").read_text()
+        # For Verus, use the original verified.rs for integrity check
+        verus_prog_dir = Path(__file__).parent.parent / "verus_translation" / "programs" / problem_name
         ref_ast_path = None
+        for candidate in ["verified_not_brittle.rs", "verified.rs"]:
+            p = verus_prog_dir / candidate
+            if p.exists():
+                ref_ast_path = p
+                break
+    else:
+        stripped_code = (problem_input / "stripped.dfy").read_text()
+        ref_ast_path = problem_input / "reference_ast.json"
+        if not ref_ast_path.exists():
+            ref_ast_path = None
 
     # Setup output
     problem_out = output_dir / problem_name
@@ -505,16 +661,18 @@ def run_problem(problem_name: str, inputs_dir: Path, output_dir: Path,
         code = extract_code(llm_result["text"])
         attempt_data["extracted_code"] = code
 
-        if not code or "method" not in code:
+        code_marker = "verus!" if LANG == "verus" else "method"
+        code_tag = "VERUS_CODE" if LANG == "verus" else "DAFNY_CODE"
+        if not code or code_marker not in code:
             print(f"  [{problem_name}] Could not extract code")
             attempt_data["dafny_success"] = False
             attempt_data["dafny_output"] = "CODE_EXTRACTION_FAILED"
             result["attempts"].append(attempt_data)
-            dafny_error = "Could not extract valid Dafny code from your response. Please return the complete program inside <DAFNY_CODE> tags."
+            dafny_error = f"Could not extract valid code from your response. Please return the complete program inside <{code_tag}> tags."
             continue
 
-        # Run dafny verify
-        success, dafny_output, verify_time, spec_msg = run_dafny(code, tmp_dir, ref_ast_path)
+        # Run verification
+        success, dafny_output, verify_time, spec_msg = run_verify(code, tmp_dir, ref_ast_path)
         attempt_data["dafny_success"] = success
         attempt_data["dafny_output"] = dafny_output
         attempt_data["dafny_time"] = verify_time
@@ -571,7 +729,7 @@ def run_problem(problem_name: str, inputs_dir: Path, output_dir: Path,
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="LLM Dafny assertion benchmark")
+    parser = argparse.ArgumentParser(description="LLM assertion benchmark (Dafny or Verus)")
     parser.add_argument("--inputs-dir", type=str, required=True, help="Directory with prepared inputs")
     parser.add_argument("--output-dir", type=str, default="benchmark_results", help="Output directory")
     parser.add_argument("--backend", choices=["sglang", "llama"], default="sglang")
@@ -580,9 +738,13 @@ def main():
     parser.add_argument("--workers", type=int, default=1, help="Parallel problems (use >1 with SGLang)")
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--timeout", type=int, default=500, help="Seconds per problem")
+    parser.add_argument("--lang", choices=["dafny", "verus"], default="dafny",
+                        help="Verification language (default: dafny)")
     args = parser.parse_args()
 
-    global TIMEOUT_PER_PROBLEM
+    global TIMEOUT_PER_PROBLEM, LANG, SYSTEM_MSG
+    LANG = args.lang
+    SYSTEM_MSG = _SYSTEM_MSGS[LANG]
     TIMEOUT_PER_PROBLEM = args.timeout
 
     inputs_dir = Path(args.inputs_dir)

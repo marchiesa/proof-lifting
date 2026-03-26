@@ -49,11 +49,13 @@ EXP_ID=""
 RUN_ID=""
 BATCH_ID=""
 NUM_BATCHES=""
+BENCHMARK_LANG="dafny"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --model) MODEL="$2"; shift 2 ;;
         --mode) MODE="$2"; shift 2 ;;
+        --lang) BENCHMARK_LANG="$2"; shift 2 ;;
         --names) NAMES="$2"; shift 2 ;;
         --workers) WORKERS="$2"; shift 2 ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
@@ -73,7 +75,11 @@ fi
 
 # --- Paths ---
 WORK="/leonardo_work/EUHPC_D29_022/mchiesa0"
-BENCHMARK_DIR="$WORK/benchmark"
+if [ "$BENCHMARK_LANG" = "verus" ]; then
+    BENCHMARK_DIR="$WORK/benchmark_verus"
+else
+    BENCHMARK_DIR="$WORK/benchmark"
+fi
 INPUTS_DIR="$BENCHMARK_DIR/inputs"
 MODELS_DIR="$WORK/models"
 RESULTS_SUFFIX="${MODE}_${MODEL}"
@@ -91,6 +97,13 @@ source "$WORK/software/sglang_env/bin/activate"
 export DOTNET8="$WORK/software/dotnet8/dotnet"
 export DAFNY_DLL="$WORK/software/dafny-modified/Dafny.dll"
 export Z3_PATH="$WORK/software/z3/bin/z3"
+
+# Verus (via Singularity)
+export VERUS_BIN="$WORK/software/verus/verus-x86-linux/verus"
+export VERUS_SIF="$WORK/software/verus/ubuntu_22.04.sif"
+export CARGO_BIN="$WORK/software/cargo/bin"
+export RUSTUP_HOME="$WORK/software/rustup"
+export CARGO_HOME="$WORK/software/cargo"
 
 mkdir -p "$RESULTS_DIR" "$WORK/logs"
 
@@ -176,7 +189,8 @@ CMD="python3 $SCRIPT \
     --backend sglang \
     --url http://127.0.0.1:$PORT \
     --workers $WORKERS \
-    --timeout $TIMEOUT"
+    --timeout $TIMEOUT \
+    --lang $BENCHMARK_LANG"
 
 # If --names specified, use those. Otherwise, if batching, split the problem list.
 if [ -n "$NAMES" ]; then
