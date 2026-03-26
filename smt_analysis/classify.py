@@ -14,6 +14,14 @@ Usage:
     python3 smt_analysis/classify.py --output quirks_catalog.json
 """
 
+"""
+Research question: Which proof assertions in verified Dafny programs are truly essential (SMT solver can't figure them  
+  out alone), what SMT mechanism causes the gap, and can LLMs supply them?
+"""
+
+
+from __future__ import annotations
+
 import argparse
 import json
 import subprocess
@@ -25,20 +33,77 @@ PROJ_ROOT = Path(__file__).parent.parent.resolve()
 RESULTS_DIR = PROJ_ROOT / "smt_analysis" / "results"
 
 
+def _normalize_fast_report(raw: dict) -> dict:
+    """Convert fast_report.json schema to the common report schema used by this script."""
+    problem_id = raw.get("problem", raw.get("problem_id", "unknown"))
+    essential_elements = []
+    for d in raw.get("diagnoses", []):
+        category = d.get("category", "unknown")
+        high_level = d.get("high_level", "")
+        low_level = d.get("low_level", "")
+        pattern = d.get("pattern", d.get("reason", ""))
+        confidence = d.get("confidence", "n/a")
+        assertion = d.get("assertion", "")
+        mechanism = category
+        if low_level and low_level != "unknown":
+            mechanism = f"{low_level}/{category}"
+        explanation = pattern
+        if d.get("sub_pattern"):
+            explanation = f"{d['sub_pattern']}: {pattern}"
+        essential_elements.append(
+            {
+                "element": assertion,
+                "type": "assertion",
+                "essential": True,
+                "diagnosis": {
+                    "mechanism": mechanism,
+                    "high_level": high_level,
+                    "low_level": low_level,
+                    "category": category,
+                    "explanation": explanation,
+                    "ghost_var_test": "",
+                    "confidence": confidence,
+                },
+                "without_it": {},
+            }
+        )
+    return {
+        "problem_id": problem_id,
+        "solved": True,
+        "attempts": 0,
+        "essential_elements": essential_elements,
+        "_source_dir": raw.get("_source_dir", ""),
+        "_format": "fast",
+        "_summary": raw.get("summary", {}),
+    }
+
+
 def collect_reports(results_dir: Path) -> list[dict]:
-    """Collect all report.json files from results directories."""
+    """Collect report.json and fast_report.json files from results directories."""
     reports = []
     for problem_dir in sorted(results_dir.iterdir()):
         if not problem_dir.is_dir():
             continue
         report_file = problem_dir / "report.json"
-        if report_file.exists():
-            try:
-                report = json.loads(report_file.read_text())
-                report["_source_dir"] = str(problem_dir)
-                reports.append(report)
-            except json.JSONDecodeError as e:
-                print(f"  WARNING: Invalid JSON in {report_file}: {e}", file=sys.stderr)
+        fast_file = problem_dir / "fast_report.json"
+        # Prefer report.json (full analysis); fall back to fast_report.json
+        chosen = (
+            report_file
+            if report_file.exists()
+            else (fast_file if fast_file.exists() else None)
+        )
+        if chosen is None:
+            continue
+        try:
+            raw = json.loads(chosen.read_text())
+            raw["_source_dir"] = str(problem_dir)
+            if chosen.name == "fast_report.json":
+                report = _normalize_fast_report(raw)
+            else:
+                report = raw
+            reports.append(report)
+        except json.JSONDecodeError as e:
+            print(f"  WARNING: Invalid JSON in {chosen}: {e}", file=sys.stderr)
     return reports
 
 
@@ -50,17 +115,147 @@ def extract_quirks(reports: list[dict]) -> list[dict]:
         for elem in report.get("essential_elements", []):
             diagnosis = elem.get("diagnosis", {})
             if diagnosis:
-                quirks.append({
-                    "problem_id": problem_id,
-                    "element": elem.get("element", ""),
-                    "element_type": elem.get("type", ""),
-                    "mechanism": diagnosis.get("mechanism", ""),
-                    "explanation": diagnosis.get("explanation", ""),
-                    "ghost_var_test": diagnosis.get("ghost_var_test", ""),
-                    "confidence": diagnosis.get("confidence", ""),
-                    "without_it": elem.get("without_it", {}),
-                })
+                quirks.append(
+                    {
+                        "problem_id": problem_id,
+                        "element": elem.get("element", ""),
+                        "element_type": elem.get("type", ""),
+                        "mechanism": diagnosis.get("mechanism", ""),
+                        "high_level": diagnosis.get("high_level", ""),
+                        "low_level": diagnosis.get("low_level", ""),
+                        "category": diagnosis.get("category", ""),
+                        "explanation": diagnosis.get("explanation", ""),
+                        "ghost_var_test": diagnosis.get("ghost_var_test", ""),
+                        "confidence": diagnosis.get("confidence", ""),
+                        "without_it": elem.get("without_it", {}),
+                    }
+                )
     return quirks
+
+
+_CAT_DESCRIPTIONS = {
+    "A1": "Existential witness assertion (legacy; now A3). The solver needs help instantiating an existential — the assertion provides a concrete witness.",
+    "A2": "Predicate/function call assertion. Places a ground term P(args) in the e-graph so that a universally quantified definition axiom or forall hypothesis fires at specific arguments. Includes ghost function equalities at concrete inputs (formerly A3).",
+    "A3": "Z3 does not search for existential witnesses. Even when a witness is trivially obvious or the domain is finite (e.g. bool), Z3 never enumerates candidates — an explicit assert P(witness) is required.",
+    "A4": "Universal quantifier assertion. Provides a forall fact the solver cannot derive by E-matching alone.",
+    "A5": "Specific-element equality. Pins down the value of a collection element at a particular index to guide unification.",
+    "B1": "Sequence slice equality (SMT axiom gap). Boogie's sequence prelude is missing axioms for Seq#Take, Seq#Append or Seq#Drop compositions; the assertion provides the equality via Seq#Equal extensionality.",
+    "C1": "Arithmetic / modular identity. The solver's arithmetic reasoning does not propagate a modular or division identity; the assertion states it explicitly.",
+    "D1": "Ghost variable equality. Asserts that a ghost variable equals a computed expression, acting as a named intermediate step.",
+    "D2": "Bounds assertion. States index/range bounds that the solver cannot derive from the invariant alone.",
+    "D3": "Concrete value assertion. Fixes the value of a collection cell (e.g., grid[i][j] == 'W') for the solver.",
+    "D4": "Contradiction (assert false). Used in an if-branch to discharge an impossible case; forces Z3 to complete that branch.",
+}
+
+_B1_SUBTYPES = {"B1", "B1-take-append", "B1-take-full-length", "B1-seq-extensionality"}
+
+
+def _normalize_cat(cat: str, mechanism: str) -> str:
+    """Merge B1 sub-categories and map legacy mechanism names to categories."""
+    if cat in _B1_SUBTYPES or "B1" in cat:
+        return "B1"
+    # Legacy names from old report.json
+    legacy = {
+        "structural_requirement": "A-struct",
+        "standard accumulator invariant": "A-struct",
+        "standard loop bounds invariant": "A-struct",
+        "existential witness needed": "A1",
+        "missing Take-of-Take axiom": "B1",
+        "missing Take-of-full-length axiom": "B1",
+        "missing_take_drop_commutation_and_take_of_take_axioms": "B1",
+        "universal quantifier proof needed": "A4",
+    }
+    return legacy.get(cat, cat)
+
+
+def aggregate_direct(reports: list[dict], quirks: list[dict]) -> dict:
+    """Build catalog directly from fast_report categories without calling Claude."""
+    from collections import defaultdict
+
+    categories: dict[str, dict] = {}
+    high_level_groups: dict[str, list] = defaultdict(list)
+
+    for q in quirks:
+        raw_cat = q.get("category") or q.get("mechanism", "unknown")
+        cat = _normalize_cat(raw_cat, q.get("mechanism", ""))
+        hl = q.get("high_level", "unknown")
+        if hl == "unknown" and cat in _CAT_DESCRIPTIONS:
+            hl = {
+                "A1": "A-structural",
+                "A2": "A-structural",
+                "A3": "A-structural",
+                "A4": "A-structural",
+                "A5": "A-structural",
+                "B1": "B-missing-axioms",
+                "C1": "C-arithmetic",
+                "D1": "D-case-analysis",
+                "D2": "D-case-analysis",
+                "D3": "D-case-analysis",
+                "D4": "D-case-analysis",
+            }.get(cat, hl)
+        high_level_groups[hl].append(q)
+        if cat not in categories:
+            categories[cat] = {
+                "count": 0,
+                "high_level": hl,
+                "low_level": q.get("low_level", ""),
+                "description": _CAT_DESCRIPTIONS.get(cat, q.get("explanation", "")),
+                "canonical_fix": q.get("element", ""),
+                "examples": [],
+                "problems": set(),
+                "subtypes": defaultdict(int),
+            }
+        entry = categories[cat]
+        entry["count"] += 1
+        entry["problems"].add(q["problem_id"])
+        if raw_cat != cat:
+            entry["subtypes"][raw_cat] += 1
+        if len(entry["examples"]) < 3:
+            entry["examples"].append(
+                {
+                    "problem_id": q["problem_id"],
+                    "assertion": q["element"],
+                    "confidence": q["confidence"],
+                }
+            )
+
+    # Convert sets to lists for JSON serialisation
+    quirk_types = {}
+    for name, info in sorted(categories.items(), key=lambda x: -x[1]["count"]):
+        entry: dict = {
+            "count": info["count"],
+            "high_level": info["high_level"],
+            "low_level": info["low_level"],
+            "description": info["description"],
+            "canonical_fix": info["canonical_fix"],
+            "examples": info["examples"],
+            "problem_count": len(info["problems"]),
+        }
+        if info["subtypes"]:
+            entry["subtypes"] = dict(info["subtypes"])
+        quirk_types[name] = entry
+
+    most_common = (
+        max(quirk_types, key=lambda k: quirk_types[k]["count"]) if quirk_types else ""
+    )
+    total_problems = len(reports)
+    solved_problems = sum(1 for r in reports if r.get("solved"))
+
+    catalog = {
+        "quirk_types": quirk_types,
+        "high_level_summary": {
+            hl: len(qs)
+            for hl, qs in sorted(high_level_groups.items(), key=lambda x: -len(x[1]))
+        },
+        "summary": {
+            "total_quirks": len(quirks),
+            "categories": len(quirk_types),
+            "most_common": most_common,
+            "total_problems": total_problems,
+            "solved_problems": solved_problems,
+        },
+    }
+    return catalog
 
 
 def build_classify_prompt(reports: list[dict], quirks: list[dict]) -> str:
@@ -73,14 +268,14 @@ def build_classify_prompt(reports: list[dict], quirks: list[dict]) -> str:
     # Format all quirks for analysis
     quirk_descriptions = []
     for i, q in enumerate(quirks):
-        desc = f"""### Quirk {i+1} (from {q['problem_id']})
-**Assertion:** `{q['element']}`
-**Type:** {q['element_type']}
-**Mechanism:** {q['mechanism']}
-**Explanation:** {q['explanation']}
-**Ghost var test:** {q['ghost_var_test']}
-**Confidence:** {q['confidence']}
-**Without it:** {json.dumps(q['without_it'], indent=2)}
+        desc = f"""### Quirk {i + 1} (from {q["problem_id"]})
+**Assertion:** `{q["element"]}`
+**Type:** {q["element_type"]}
+**Mechanism:** {q["mechanism"]}
+**Explanation:** {q["explanation"]}
+**Ghost var test:** {q["ghost_var_test"]}
+**Confidence:** {q["confidence"]}
+**Without it:** {json.dumps(q["without_it"], indent=2)}
 """
         quirk_descriptions.append(desc)
 
@@ -216,7 +411,9 @@ def extract_json_from_response(response: str) -> dict | None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Classify SMT quirks across all problems")
+    parser = argparse.ArgumentParser(
+        description="Classify SMT quirks across all problems"
+    )
     parser.add_argument(
         "--reports-dir",
         type=Path,
@@ -224,7 +421,8 @@ def main():
         help="Directory containing per-problem results",
     )
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=Path,
         help="Output file (default: <reports-dir>/quirks_catalog.json)",
     )
@@ -234,6 +432,11 @@ def main():
         default=300,
         help="Timeout for Claude classification call (default: 300s)",
     )
+    parser.add_argument(
+        "--direct",
+        action="store_true",
+        help="Aggregate fast_report categories directly without calling Claude",
+    )
     args = parser.parse_args()
 
     output_file = args.output or (args.reports_dir / "quirks_catalog.json")
@@ -241,7 +444,10 @@ def main():
     # Collect reports
     print(f"Collecting reports from {args.reports_dir}...")
     reports = collect_reports(args.reports_dir)
-    print(f"  Found {len(reports)} reports")
+    fast_count = sum(1 for r in reports if r.get("_format") == "fast")
+    print(
+        f"  Found {len(reports)} reports ({fast_count} fast_report, {len(reports) - fast_count} report)"
+    )
 
     if not reports:
         print("No reports found. Run quirk_finder.py first.")
@@ -275,47 +481,52 @@ def main():
         print(f"  Wrote empty catalog: {output_file}")
         sys.exit(0)
 
-    # Build classification prompt
-    prompt = build_classify_prompt(reports, quirks)
+    if args.direct:
+        # Aggregate directly from fast_report categories — no Claude call needed
+        print("  Aggregating categories directly (--direct mode)...")
+        catalog = aggregate_direct(reports, quirks)
+    else:
+        # Build classification prompt
+        prompt = build_classify_prompt(reports, quirks)
 
-    # Save prompt for debugging
-    prompt_file = args.reports_dir / "classify_prompt.md"
-    prompt_file.write_text(prompt)
-    print(f"  Saved classification prompt: {prompt_file}")
+        # Save prompt for debugging
+        prompt_file = args.reports_dir / "classify_prompt.md"
+        prompt_file.write_text(prompt)
+        print(f"  Saved classification prompt: {prompt_file}")
 
-    # Call Claude for classification
-    print("  Calling Claude for classification...")
-    t0 = time.time()
-    response = call_claude_classify(prompt, args.timeout)
-    elapsed = time.time() - t0
-    print(f"  Classification took {elapsed:.0f}s")
+        # Call Claude for classification
+        print("  Calling Claude for classification...")
+        t0 = time.time()
+        response = call_claude_classify(prompt, args.timeout)
+        elapsed = time.time() - t0
+        print(f"  Classification took {elapsed:.0f}s")
 
-    if not response:
-        print("ERROR: No response from Claude", file=sys.stderr)
-        sys.exit(1)
+        if not response:
+            print("ERROR: No response from Claude", file=sys.stderr)
+            sys.exit(1)
 
-    # Save raw response
-    response_file = args.reports_dir / "classify_response.txt"
-    response_file.write_text(response)
+        # Save raw response
+        response_file = args.reports_dir / "classify_response.txt"
+        response_file.write_text(response)
 
-    # Parse JSON from response
-    catalog = extract_json_from_response(response)
+        # Parse JSON from response
+        catalog = extract_json_from_response(response)  # ty:ignore[invalid-argument-type]
 
-    if not catalog:
-        print("WARNING: Could not parse JSON from Claude response", file=sys.stderr)
-        print("  Raw response saved to:", response_file)
-        # Create a minimal catalog with the raw response
-        catalog = {
-            "raw_analysis": response,
-            "quirk_types": {},
-            "summary": {"total_quirks": len(quirks), "parse_error": True},
-        }
+        if not catalog:
+            print("WARNING: Could not parse JSON from Claude response", file=sys.stderr)
+            print("  Raw response saved to:", response_file)
+            # Create a minimal catalog with the raw response
+            catalog = {
+                "raw_analysis": response,
+                "quirk_types": {},
+                "summary": {"total_quirks": len(quirks), "parse_error": True},
+            }
 
     # Add per-problem summary
     catalog["per_problem"] = {}
     for report in reports:
         pid = report.get("problem_id", "?")
-        catalog["per_problem"][pid] = {
+        catalog["per_problem"][pid] = {  # ty:ignore[invalid-assignment]
             "solved": report.get("solved", False),
             "attempts": report.get("attempts", 0),
             "quirks_found": [
@@ -334,13 +545,13 @@ def main():
     # Print summary
     qt = catalog.get("quirk_types", {})
     summary = catalog.get("summary", {})
-    print(f"  Categories discovered: {len(qt)}")
+    print(f"  Categories discovered: {len(qt)}")  # ty:ignore[invalid-argument-type]
     for name, info in qt.items():
         count = info.get("count", "?")
         desc = info.get("description", "")[:80]
         print(f"    {name}: {count} instances — {desc}")
     if summary.get("novel_findings"):
-        print(f"  Novel findings: {summary['novel_findings']}")
+        print(f"  Novel findings: {summary['novel_findings']}")  # ty:ignore[invalid-argument-type, not-subscriptable]
 
 
 if __name__ == "__main__":

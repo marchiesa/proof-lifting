@@ -22,7 +22,7 @@ method DetermineLine(stops: seq<seq<int>>) returns (result: seq<int>)
   ensures forall i | 0 <= i < |result| :: PossibleLine(result[i], stops)
   // Completeness: every possible line appears in result
   ensures forall k | 0 <= k < |stops| :: forall j | 0 <= j < |stops[k]| ::
-            PossibleLine(stops[k][j], stops) ==> InSeq(stops[k][j], result)
+                                           PossibleLine(stops[k][j], stops) ==> InSeq(stops[k][j], result)
 {
   if |stops| == 0 { result := []; return; }
   result := stops[0];

@@ -43,8 +43,8 @@ lemma GcdBound(a: int, b: int)
 
 method MaximumGCD(n: int) returns (result: int)
   requires n >= 2
-  ensures exists a: int | 1 <= a && a < n :: exists b: int | a < b && b <= n :: Gcd(a, b) == result
-  ensures forall a: int | 1 <= a && a < n :: forall b: int | a < b && b <= n :: Gcd(a, b) <= result
+  ensures exists a, b: int | 1 <= a < b <= n :: Gcd(a, b) == result
+  ensures forall a, b: int | 1 <= a < b <= n :: Gcd(a, b) <= result
 {
   result := n / 2;
 
@@ -56,13 +56,9 @@ method MaximumGCD(n: int) returns (result: int)
   assert Gcd(wb, wa) == wa;
   assert Gcd(wa, wb) == wa;
 
-  forall ai: int | 1 <= ai && ai < n
-    ensures forall bi: int | ai < bi && bi <= n :: Gcd(ai, bi) <= result
+  forall ai, bi: int | 1 <= ai < bi <= n
+    ensures Gcd(ai, bi) <= result
   {
-    forall bi: int | ai < bi && bi <= n
-      ensures Gcd(ai, bi) <= result
-    {
-      GcdBound(ai, bi);
-    }
+    GcdBound(ai, bi);
   }
 }

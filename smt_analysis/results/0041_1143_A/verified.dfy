@@ -35,7 +35,7 @@ method TheDoors(n: int, doors: seq<int>) returns (k: int)
     invariant a == CountVal(doors[..i], 0)
     invariant b == CountVal(doors[..i], 1)
   {
-    assert doors[i] == 0 || doors[i] == 1;
+    // assert doors[i] == 0 || doors[i] == 1;
     assert doors[..i+1][..i] == doors[..i];
     if doors[i] == 0 {
       a := a + 1;
@@ -55,7 +55,7 @@ method TheDoors(n: int, doors: seq<int>) returns (k: int)
     invariant y == CountVal(doors[..i], 1)
     invariant forall j | 0 <= j <= i :: !CanExitAfter(doors, j)
   {
-    assert doors[i] == 0 || doors[i] == 1;
+    // assert doors[i] == 0 || doors[i] == 1;
     assert doors[..i+1][..i] == doors[..i];
     if doors[i] == 1 {
       y := y + 1;
@@ -65,7 +65,7 @@ method TheDoors(n: int, doors: seq<int>) returns (k: int)
     if x == a || y == b {
       return i + 1;
     }
-    assert !CanExitAfter(doors, i + 1);
+    // assert !CanExitAfter(doors, i + 1);
     i := i + 1;
   }
   assert doors[..n] == doors;

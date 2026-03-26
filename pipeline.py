@@ -19,7 +19,6 @@ Timeout: 5 minutes per problem. Failures go to queue/.
 
 import json
 import os
-import random
 import subprocess
 import sys
 import tempfile
@@ -45,20 +44,22 @@ def load_data():
         pid = sub["problem_id"]
         if pid in problems:
             p = problems[pid]
-            joined.append({
-                "id": pid,
-                "title": p["title"],
-                "description": p["description"],
-                "input_format": p["input_format"],
-                "output_format": p["output_format"],
-                "examples": p["examples"],
-                "official_tests": p["official_tests"],
-                "rating": p["rating"],
-                "tags": p["tags"],
-                "note": p.get("note", ""),
-                "python_code": sub["source"],
-                "python_lang": sub["language"],
-            })
+            joined.append(
+                {
+                    "id": pid,
+                    "title": p["title"],
+                    "description": p["description"],
+                    "input_format": p["input_format"],
+                    "output_format": p["output_format"],
+                    "examples": p["examples"],
+                    "official_tests": p["official_tests"],
+                    "rating": p["rating"],
+                    "tags": p["tags"],
+                    "note": p.get("note", ""),
+                    "python_code": sub["source"],
+                    "python_lang": sub["language"],
+                }
+            )
     return joined
 
 
@@ -67,8 +68,15 @@ def call_claude(prompt, timeout=120, label=""):
     t0 = time.time()
     try:
         result = subprocess.run(
-            ["claude", "-p", "--dangerously-skip-permissions", "--no-session-persistence",
-             "--verbose", "--debug-file", "/tmp/claude_debug.log"],
+            [
+                "claude",
+                "-p",
+                "--dangerously-skip-permissions",
+                "--no-session-persistence",
+                "--verbose",
+                "--debug-file",
+                "/tmp/claude_debug.log",
+            ],
             input=prompt,
             capture_output=True,
             text=True,
@@ -76,7 +84,9 @@ def call_claude(prompt, timeout=120, label=""):
             cwd="/tmp",
         )
         elapsed = time.time() - t0
-        print(f"    [timing] claude call{f' ({label})' if label else ''}: {elapsed:.0f}s, prompt {len(prompt)} chars, output {len(result.stdout)} chars")
+        print(
+            f"    [timing] claude call{f' ({label})' if label else ''}: {elapsed:.0f}s, prompt {len(prompt)} chars, output {len(result.stdout)} chars"
+        )
         return result.stdout
     except subprocess.TimeoutExpired:
         return None
@@ -156,49 +166,58 @@ def py2_to_py3(code):
     # Wrap bare input() → int(input()), but NOT raw_input() or input().split().
     # Must run BEFORE raw_input → input conversion.
     code = re.sub(
-        r'(?<!raw_)(?<!int\()(?<!str\()(?<!float\()(?<!eval\()\binput\(\)',
-        'int(input())',
+        r"(?<!raw_)(?<!int\()(?<!str\()(?<!float\()(?<!eval\()\binput\(\)",
+        "int(input())",
         code,
     )
     # Undo wrapping when followed by . (e.g., input().split(), input().strip())
-    code = re.sub(r'int\(input\(\)\)\.', 'input().', code)
+    code = re.sub(r"int\(input\(\)\)\.", "input().", code)
     # Don't double-wrap
-    code = code.replace('int(int(input()))', 'int(input())')
+    code = code.replace("int(int(input()))", "int(input())")
 
     # ── 2. raw_input → input ─────────────────────────────────────
     code = code.replace("raw_input()", "input()")
     code = code.replace("raw_input", "input")
     # Clean up `input = input` (from `input = raw_input`)
-    code = re.sub(r'^\s*input\s*=\s*input\s*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r"^\s*input\s*=\s*input\s*$", "", code, flags=re.MULTILINE)
 
     # ── 3. xrange → range ────────────────────────────────────────
-    code = re.sub(r'\bxrange\b', 'range', code)
+    code = re.sub(r"\bxrange\b", "range", code)
     # Clean up `range = range` (from `range = xrange`)
-    code = re.sub(r'^\s*range\s*=\s*range\s*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r"^\s*range\s*=\s*range\s*$", "", code, flags=re.MULTILINE)
 
     # ── 4. print statement → print function ──────────────────────
     # Handle print at start of line (with optional indent)
-    code = re.sub(r'^([ \t]*)print\s+(?!\()(.+)$',
-                  r'\1print(\2)', code, flags=re.MULTILINE)
+    code = re.sub(
+        r"^([ \t]*)print\s+(?!\()(.+)$", r"\1print(\2)", code, flags=re.MULTILINE
+    )
     # Handle inline print after colon: `if x: print "y"`, `else: print "y"`
-    code = re.sub(r'(:\s*)print\s+(?!\()(.+)$',
-                  lambda m: f"{m.group(1)}print({m.group(2)})",
-                  code, flags=re.MULTILINE)
+    code = re.sub(
+        r"(:\s*)print\s+(?!\()(.+)$",
+        lambda m: f"{m.group(1)}print({m.group(2)})",
+        code,
+        flags=re.MULTILINE,
+    )
 
     # ── 5. map/filter assigned to variable → list() ──────────────
     # py2 map() returns list; py3 returns iterator (breaks len/index/sort).
     # Only wrap single-variable assignments (unpacking works on iterators).
-    code = re.sub(r'^(\s*\w+\s*=\s*)map\((.+)\)\s*$',
-                  r'\1list(map(\2))', code, flags=re.MULTILINE)
-    code = re.sub(r'^(\s*\w+\s*=\s*)filter\((.+)\)\s*$',
-                  r'\1list(filter(\2))', code, flags=re.MULTILINE)
+    code = re.sub(
+        r"^(\s*\w+\s*=\s*)map\((.+)\)\s*$", r"\1list(map(\2))", code, flags=re.MULTILINE
+    )
+    code = re.sub(
+        r"^(\s*\w+\s*=\s*)filter\((.+)\)\s*$",
+        r"\1list(filter(\2))",
+        code,
+        flags=re.MULTILINE,
+    )
 
     # ── 6. fractions.gcd → math.gcd (removed in py3.5) ──────────
     code = code.replace("from fractions import gcd", "from math import gcd")
 
     # ── 7. Other py2 → py3 fixes ─────────────────────────────────
-    code = re.sub(r'(\w+)\.has_key\((.+?)\)', r'\2 in \1', code)
-    code = re.sub(r'(\d+)L\b', r'\1', code)
+    code = re.sub(r"(\w+)\.has_key\((.+?)\)", r"\2 in \1", code)
+    code = re.sub(r"(\d+)L\b", r"\1", code)
     code = code.replace(".iteritems()", ".items()")
     code = code.replace(".itervalues()", ".values()")
     code = code.replace(".iterkeys()", ".keys()")
@@ -209,28 +228,28 @@ def py2_to_py3(code):
 
 def _py2_to_py3_intdiv(code):
     """Additional pass: convert / to // for integer division (py2 semantic)."""
-    import re
+
     code = py2_to_py3(code)
     # Replace / with // outside of strings and comments.
     # Only replace standalone / (not // or /=).
-    lines = code.split('\n')
+    lines = code.split("\n")
     result = []
     for line in lines:
         # Skip comment-only lines
         stripped = line.lstrip()
-        if stripped.startswith('#'):
+        if stripped.startswith("#"):
             result.append(line)
             continue
         # Split line into code and comment parts
         in_str = None
         code_end = len(line)
         for i, ch in enumerate(line):
-            if ch in ('"', "'") and (i == 0 or line[i-1] != '\\'):
+            if ch in ('"', "'") and (i == 0 or line[i - 1] != "\\"):
                 if in_str is None:
                     in_str = ch
                 elif ch == in_str:
                     in_str = None
-            elif ch == '#' and in_str is None:
+            elif ch == "#" and in_str is None:
                 code_end = i
                 break
         code_part = line[:code_end]
@@ -241,27 +260,27 @@ def _py2_to_py3_intdiv(code):
         i = 0
         while i < len(code_part):
             ch = code_part[i]
-            if ch in ('"', "'") and (i == 0 or code_part[i-1] != '\\'):
+            if ch in ('"', "'") and (i == 0 or code_part[i - 1] != "\\"):
                 if in_str is None:
                     in_str = ch
                 elif ch == in_str:
                     in_str = None
                 new_code.append(ch)
-            elif ch == '/' and in_str is None:
+            elif ch == "/" and in_str is None:
                 # Check it's not already // or /=
-                if i + 1 < len(code_part) and code_part[i+1] in ('/', '='):
+                if i + 1 < len(code_part) and code_part[i + 1] in ("/", "="):
                     new_code.append(ch)
-                elif i > 0 and code_part[i-1] == '/':
+                elif i > 0 and code_part[i - 1] == "/":
                     new_code.append(ch)
                 else:
-                    new_code.append('//')
+                    new_code.append("//")
                     i += 1
                     continue
             else:
                 new_code.append(ch)
             i += 1
-        result.append(''.join(new_code) + comment_part)
-    return '\n'.join(result)
+        result.append("".join(new_code) + comment_part)
+    return "\n".join(result)
 
 
 def _run_code(code, test_input, timeout=10):
@@ -295,9 +314,11 @@ def _pick_best_variant(python_code, examples):
     variants = [python_code, py2_to_py3(python_code), _py2_to_py3_intdiv(python_code)]
 
     # If we have examples with expected output, validate against them
-    validated_examples = [(ex["input"].strip(), ex["output"].strip())
-                          for ex in examples
-                          if ex.get("input", "").strip() and ex.get("output", "").strip()]
+    validated_examples = [
+        (ex["input"].strip(), ex["output"].strip())
+        for ex in examples
+        if ex.get("input", "").strip() and ex.get("output", "").strip()
+    ]
 
     if validated_examples:
         for variant in variants:
@@ -343,10 +364,10 @@ def generate_random_inputs(problem, existing_inputs, count=10):
 Keep values SMALL (numbers ≤ 50, strings ≤ 10 chars, arrays ≤ 10 elements) so the solution runs fast.
 
 ## Problem description:
-{problem['description']}
+{problem["description"]}
 
 ## Input format:
-{problem.get('input_format', 'See description.')}
+{problem.get("input_format", "See description.")}
 
 ## Example inputs:
 {examples_str}
@@ -408,7 +429,9 @@ def derive_test_pairs(problem):
 
     # If we don't have enough pairs, generate random inputs
     if len(pairs) < 5:
-        print(f"  Only {len(pairs)} I/O pairs from examples, generating random inputs...")
+        print(
+            f"  Only {len(pairs)} I/O pairs from examples, generating random inputs..."
+        )
         random_inputs = generate_random_inputs(problem, [p["input"] for p in pairs])
         for inp in random_inputs:
             inp = inp.replace("\r\n", "\n").strip()
@@ -437,11 +460,13 @@ def generate_negative_outputs(pairs):
         original = pair["output"]
         modified = _modify_output(original)
         if modified != original:
-            negatives.append({
-                "input": pair["input"],
-                "output": modified,
-                "original_output": original,
-            })
+            negatives.append(
+                {
+                    "input": pair["input"],
+                    "output": modified,
+                    "original_output": original,
+                }
+            )
     return negatives
 
 
@@ -488,7 +513,7 @@ def format_io_pairs(pairs, max_pairs=20):
     """Format derived I/O pairs as readable string."""
     lines = []
     for i, pair in enumerate(pairs[:max_pairs]):
-        lines.append(f"Test {i+1}:")
+        lines.append(f"Test {i + 1}:")
         lines.append(f"  Input:  {pair['input']}")
         lines.append(f"  Output: {pair['output']}")
     return "\n".join(lines)
@@ -496,20 +521,21 @@ def format_io_pairs(pairs, max_pairs=20):
 
 # ─── STEP 1: SIGNATURE ──────────────────────────────────────────────
 
+
 def step1_signature(problem):
     """Ask LLM for just the Dafny method signature."""
     prompt = f"""I have a Codeforces problem. I need you to produce ONLY a Dafny method signature.
 
-## Problem: {problem['title']}
+## Problem: {problem["title"]}
 
-{problem['description']}
+{problem["description"]}
 
-Input format: {problem['input_format']}
-Output format: {problem['output_format']}
+Input format: {problem["input_format"]}
+Output format: {problem["output_format"]}
 
 ## Python solution (for reference):
 ```python
-{problem['python_code']}
+{problem["python_code"]}
 ```
 
 ## What I need:
@@ -537,6 +563,7 @@ Output ONLY the signature inside a ```dafny block. Nothing else.
 
 # ─── STEP 2: TESTS (derived from running Python) ────────────────────
 
+
 def step2_tests(problem, signature, io_pairs):
     """Ask LLM to translate derived I/O pairs into tests.dfy."""
     pairs_str = format_io_pairs(io_pairs)
@@ -548,8 +575,8 @@ def step2_tests(problem, signature, io_pairs):
 {signature}
 ```
 
-## Problem: {problem['title']}
-{problem['description'][:500]}
+## Problem: {problem["title"]}
+{problem["description"][:500]}
 
 ## Input/output pairs (derived by running the original Python solution):
 {pairs_str}
@@ -583,6 +610,7 @@ Output the complete file in a ```dafny block.
 
 # ─── STEP 3: IMPLEMENTATION ─────────────────────────────────────────
 
+
 def step3_implementation(problem, signature, tests_content):
     """Ask LLM to produce the complete file: method impl + all tests."""
     prompt = f"""I have a Dafny test file with a stub method. Replace the stub with a real implementation.
@@ -594,7 +622,7 @@ def step3_implementation(problem, signature, tests_content):
 
 ## Python solution to translate:
 ```python
-{problem['python_code']}
+{problem["python_code"]}
 ```
 
 ## What I need:
@@ -647,6 +675,7 @@ Output the COMPLETE fixed tests.dfy file in a ```dafny block.
 
 # ─── STEP 4: FORMAL SPEC ────────────────────────────────────────────
 
+
 def _step4a_prompt(problem, working_code, rejection_feedback=None):
     """Build the step4a prompt, optionally including rejection feedback."""
     rejection_section = ""
@@ -671,8 +700,8 @@ predicates, then use them in the ensures clause. Do NOT encode the answer formul
 {working_code}
 ```
 
-## Problem: {problem['title']}
-{problem['description']}
+## Problem: {problem["title"]}
+{problem["description"]}
 {rejection_section}
 ## What I need:
 
@@ -749,8 +778,8 @@ def step4a_validate_spec(problem, spec_code):
 correctly formalizes the PROBLEM STATEMENT or whether it takes a shortcut by encoding
 the algorithm's answer formula directly.
 
-## Problem: {problem['title']}
-{problem['description']}
+## Problem: {problem["title"]}
+{problem["description"]}
 
 ## Specification:
 ```dafny
@@ -805,13 +834,19 @@ def step4a_testable_spec(problem, working_code):
 
     for attempt in range(MAX_ATTEMPTS):
         prompt = _step4a_prompt(problem, working_code, rejection_feedback)
-        output = call_claude(prompt, timeout=600, label=f"step4a_testable_spec{'_retry' + str(attempt) if attempt > 0 else ''}")
+        output = call_claude(
+            prompt,
+            timeout=600,
+            label=f"step4a_testable_spec{'_retry' + str(attempt) if attempt > 0 else ''}",
+        )
         if output is None:
             print("  [debug] step4a: claude returned None (timeout?)")
             return None
         block = extract_dafny_block(output)
         if block is None:
-            print(f"  [debug] step4a: no code block found. Output starts with: {output[:300]}")
+            print(
+                f"  [debug] step4a: no code block found. Output starts with: {output[:300]}"
+            )
             return None
 
         # Validate the spec isn't a shortcut
@@ -821,11 +856,15 @@ def step4a_testable_spec(problem, working_code):
                 print(f"  [debug] step4a: spec accepted after {attempt + 1} attempts")
             return block
 
-        print(f"  [debug] step4a: SHORTCUT DETECTED (attempt {attempt + 1}/{MAX_ATTEMPTS}): {feedback[:200]}")
+        print(
+            f"  [debug] step4a: SHORTCUT DETECTED (attempt {attempt + 1}/{MAX_ATTEMPTS}): {feedback[:200]}"
+        )
         rejection_feedback = feedback
 
     # All attempts produced shortcut specs — return last one anyway
-    print(f"  [debug] step4a: WARNING — all {MAX_ATTEMPTS} attempts produced shortcut specs, using last one")
+    print(
+        f"  [debug] step4a: WARNING — all {MAX_ATTEMPTS} attempts produced shortcut specs, using last one"
+    )
     return block
 
 
@@ -893,7 +932,7 @@ def step4c_spec_tests(testable_spec_code, io_pairs, negative_pairs, problem):
     pos_str = format_io_pairs(io_pairs[:10])
     neg_lines = []
     for i, neg in enumerate(negative_pairs[:10]):
-        neg_lines.append(f"Negative {i+1}:")
+        neg_lines.append(f"Negative {i + 1}:")
         neg_lines.append(f"  Input:  {neg['input']}")
         neg_lines.append(f"  Wrong output: {neg['output']}")
         neg_lines.append(f"  Correct output: {neg['original_output']}")
@@ -907,8 +946,8 @@ Write a complete tests.dfy that tests BOTH the implementation AND the spec predi
 {testable_spec_code}
 ```
 
-## Problem: {problem['title']}
-{problem['description'][:300]}
+## Problem: {problem["title"]}
+{problem["description"][:300]}
 
 ## POSITIVE test pairs (derived by running the original code — these are correct):
 {pos_str}
@@ -959,7 +998,9 @@ Output the COMPLETE file in a ```dafny block.
     return extract_dafny_block(output)
 
 
-def step4_diagnose_negative(spec_code, test_input, modified_output, original_output, problem):
+def step4_diagnose_negative(
+    spec_code, test_input, modified_output, original_output, problem
+):
     """Spawn a separate Claude to diagnose: is the modified output a valid alternative, or is the spec wrong?
 
     Returns "alternative" if the modified output is actually valid, "spec_bug" if the spec is wrong.
@@ -967,8 +1008,8 @@ def step4_diagnose_negative(spec_code, test_input, modified_output, original_out
     prompt = f"""I have a Dafny formal specification for a Codeforces problem, and a test case where the spec
 ACCEPTS an output that I expected it to REJECT. I need you to determine why.
 
-## Problem: {problem['title']}
-{problem['description'][:500]}
+## Problem: {problem["title"]}
+{problem["description"][:500]}
 
 ## The formal spec:
 ```dafny
@@ -1051,7 +1092,9 @@ def _diagnose_error(error_output):
         )
 
     if not suggestions:
-        suggestions.append("Check the error message carefully and fix the specific issue reported.")
+        suggestions.append(
+            "Check the error message carefully and fix the specific issue reported."
+        )
 
     return "\n".join(f"- {s}" for s in suggestions)
 
@@ -1102,13 +1145,13 @@ def step4_fix_spec(spec_code, problem, fix_suggestion, failing_case):
 {spec_code}
 ```
 
-## Problem: {problem['title']}
-{problem['description'][:500]}
+## Problem: {problem["title"]}
+{problem["description"][:500]}
 
 ## Failing case:
-- Input: {failing_case['input']}
-- Wrong output accepted: {failing_case['output']}
-- Correct output: {failing_case['original_output']}
+- Input: {failing_case["input"]}
+- Wrong output accepted: {failing_case["output"]}
+- Correct output: {failing_case["original_output"]}
 
 ## Suggested fix:
 {fix_suggestion}
@@ -1130,13 +1173,14 @@ Output the COMPLETE fixed file in a ```dafny block.
 
 # ─── MAIN PIPELINE ──────────────────────────────────────────────────
 
+
 def process_problem(problem, idx):
     """Process one problem through all 4 steps."""
     pid = problem["id"].replace("/", "_")
     title = problem["title"]
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"[{idx}] {pid}: {title} (rating {problem['rating']})")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     start_time = time.time()
     problem_dir = DATASET_DIR / f"{idx:04d}_{pid}"
@@ -1144,11 +1188,17 @@ def process_problem(problem, idx):
 
     # Save metadata
     with open(problem_dir / "problem.json", "w") as f:
-        json.dump({
-            "id": problem["id"], "title": title,
-            "rating": problem["rating"], "tags": problem["tags"],
-            "description": problem["description"],
-        }, f, indent=2)
+        json.dump(
+            {
+                "id": problem["id"],
+                "title": title,
+                "rating": problem["rating"],
+                "tags": problem["tags"],
+                "description": problem["description"],
+            },
+            f,
+            indent=2,
+        )
     with open(problem_dir / "solution.py", "w") as f:
         f.write(problem["python_code"])
 
@@ -1213,13 +1263,15 @@ def process_problem(problem, idx):
     # Check tests compile (with empty body they should just return defaults)
     success, output = run_dafny(problem_dir / "tests.dfy")
     if not success:
-        print(f"  Tests don't compile yet (expected, will fix with implementation)")
+        print("  Tests don't compile yet (expected, will fix with implementation)")
     if timed_out():
         return False
 
     # ── STEP 3: Implementation ───────────────────────────────────
     print("  Step 3: Getting implementation...")
-    impl_result = retry_step(step3_implementation, "step3", problem, signature, tests_content)
+    impl_result = retry_step(
+        step3_implementation, "step3", problem, signature, tests_content
+    )
     if not impl_result:
         print("  FAILED: No implementation")
         return False
@@ -1230,21 +1282,21 @@ def process_problem(problem, idx):
 
     # Test implementation — retry until passing or timeout
     while not timed_out():
-        print(f"  Testing implementation...")
+        print("  Testing implementation...")
         success, output = run_dafny(problem_dir / "tests.dfy")
 
         if success and "All tests passed" in output:
-            print(f"  Implementation works!")
+            print("  Implementation works!")
             break
 
-        print(f"  Failed. Fixing...")
+        print("  Failed. Fixing...")
         fixed = retry_step(step3_fix, "step3_fix", tests_content, tests_content, output)
         if fixed:
             tests_content = fixed
             with open(problem_dir / "tests.dfy", "w") as f:
                 f.write(tests_content)
         else:
-            print(f"  FAILED: Could not fix implementation")
+            print("  FAILED: Could not fix implementation")
             return False
     else:
         return False
@@ -1264,7 +1316,9 @@ def process_problem(problem, idx):
 
     # ── STEP 4c: Spec tests (small inputs) + impl tests ────────
     print("  Step 4c: Getting spec + impl tests...")
-    spec_tests = retry_step(step4c_spec_tests, "step4c", testable_spec, io_pairs, negative_pairs, problem)
+    spec_tests = retry_step(
+        step4c_spec_tests, "step4c", testable_spec, io_pairs, negative_pairs, problem
+    )
     if spec_tests:
         tests_content = spec_tests
         with open(problem_dir / "tests.dfy", "w") as f:
@@ -1272,47 +1326,61 @@ def process_problem(problem, idx):
 
     # Test spec — retry with fixes until passing or timeout
     while not timed_out():
-        print(f"  Testing spec...")
+        print("  Testing spec...")
         success, output = run_dafny(problem_dir / "tests.dfy")
 
         if success and "All tests passed" in output:
-            print(f"  Spec works!")
+            print("  Spec works!")
             break
 
         # Check if the failure is a negative test that passed (spec too permissive)
         if "spec should reject" in output and "expectation violation" in output.lower():
             for neg in negative_pairs:
-                print(f"  Diagnosing: spec accepted modified output '{neg['output']}' for input '{neg['input'][:80]}'")
+                print(
+                    "  Diagnosing: spec accepted modified output '{neg['output']}' for input '{neg['input'][:80]}'"
+                )
                 verdict, fix = step4_diagnose_negative(
-                    testable_spec, neg["input"], neg["output"],
-                    neg["original_output"], problem
+                    testable_spec,
+                    neg["input"],
+                    neg["output"],
+                    neg["original_output"],
+                    problem,
                 )
                 if verdict == "alternative":
-                    print(f"    -> Valid alternative solution, removing this negative test")
+                    print(
+                        "    -> Valid alternative solution, removing this negative test"
+                    )
                     negative_pairs = [n for n in negative_pairs if n != neg]
                 elif verdict == "spec_bug":
-                    print(f"    -> Spec bug detected, fixing spec...")
+                    print("    -> Spec bug detected, fixing spec...")
                     fixed_spec = step4_fix_spec(testable_spec, problem, fix, neg)
                     if fixed_spec:
                         testable_spec = fixed_spec
                     break
 
             # Regenerate tests with updated spec / negative pairs
-            spec_tests = retry_step(step4c_spec_tests, "step4c_regen", testable_spec, io_pairs, negative_pairs, problem)
+            spec_tests = retry_step(
+                step4c_spec_tests,
+                "step4c_regen",
+                testable_spec,
+                io_pairs,
+                negative_pairs,
+                problem,
+            )
             if spec_tests:
                 tests_content = spec_tests
                 with open(problem_dir / "tests.dfy", "w") as f:
                     f.write(tests_content)
             continue
 
-        print(f"  Failed. Fixing...")
+        print("  Failed. Fixing...")
         fixed = retry_step(step4_fix, "step4_fix", tests_content, output)
         if fixed:
             tests_content = fixed
             with open(problem_dir / "tests.dfy", "w") as f:
                 f.write(tests_content)
         else:
-            print(f"  FAILED: Could not fix spec")
+            print("  FAILED: Could not fix spec")
             return False
     else:
         return False
@@ -1327,8 +1395,16 @@ def process_problem(problem, idx):
         f.write(ghost_spec)
 
     # Clean up build artifacts
-    keep = {"problem.json", "solution.py", "io_pairs.json", "negative_pairs.json",
-            "signature.txt", "task.dfy", "tests.dfy", "working_impl.dfy"}
+    keep = {
+        "problem.json",
+        "solution.py",
+        "io_pairs.json",
+        "negative_pairs.json",
+        "signature.txt",
+        "task.dfy",
+        "tests.dfy",
+        "working_impl.dfy",
+    }
     for f in problem_dir.iterdir():
         if f.name in keep:
             continue
@@ -1358,6 +1434,7 @@ def _process_worker(args_tuple):
 def main():
     import argparse
     from concurrent.futures import ProcessPoolExecutor, as_completed
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--count", type=int, default=10)
@@ -1371,7 +1448,7 @@ def main():
     data = load_data()
     data = [p for p in data if p["rating"] <= args.max_rating]
     data.sort(key=lambda p: p["rating"])
-    data = data[args.start:args.start + args.count]
+    data = data[args.start : args.start + args.count]
     print(f"Processing {len(data)} problems with {args.workers} workers")
 
     success_count = 0
@@ -1396,7 +1473,9 @@ def main():
     else:
         # Parallel mode
         with ProcessPoolExecutor(max_workers=args.workers) as executor:
-            futures = {executor.submit(_process_worker, item): item for item in work_items}
+            futures = {
+                executor.submit(_process_worker, item): item for item in work_items
+            }
             for future in as_completed(futures):
                 idx, pid, ok = future.result()
                 problem_dir = DATASET_DIR / f"{idx:04d}_{pid}"
@@ -1409,7 +1488,9 @@ def main():
                         if queue_dest.exists():
                             shutil.rmtree(queue_dest)
                         shutil.move(str(problem_dir), str(queue_dest))
-                print(f"  Progress: {success_count + fail_count}/{len(data)} done ({success_count} ok, {fail_count} failed)")
+                print(
+                    f"  Progress: {success_count + fail_count}/{len(data)} done ({success_count} ok, {fail_count} failed)"
+                )
 
     print(f"\nDone: {success_count} success, {fail_count} failed (in queue/)")
 
@@ -1423,9 +1504,9 @@ def main():
                 continue
             tests_file = d / "tests.dfy"
             if tests_file.exists():
-                f.write(f"{'='*60}\n")
+                f.write(f"{'=' * 60}\n")
                 f.write(f"{d.name}\n")
-                f.write(f"{'='*60}\n")
+                f.write(f"{'=' * 60}\n")
                 f.write(tests_file.read_text())
                 f.write("\n\n")
     print(f"All tests logged to {log_path}")
