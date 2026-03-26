@@ -13,11 +13,10 @@ Categories (from the paper):
   B. E-matching gaps — trigger-related issues:
      B1. trigger forall: universally quantified fact not instantiated
      B2. trigger existential: existential needs a witness term
-     B3. predicate/function instantiation: assert(P(args)) or reveal_with_fuel
 
   C. Brittleness — detected via seed variation (separate script)
 
-  Other: nonlinear arithmetic (by(nonlinear_arith)), propagation, etc.
+  Other: nonlinear arithmetic (by(nonlinear_arith)), unclassified.
 
 Pipeline:
   1. EXTRACT  — find assert statements in executable function bodies
@@ -263,27 +262,115 @@ def find_assert_blocks(code: str) -> list[dict]:
 def extract_assertions(rs_path: Path) -> list[dict]:
     """Extract assertions from executable function bodies only.
 
-    Skips assertions inside proof fn and spec fn.
+    Skips assertions inside spec fn (those are part of the formal spec).
+    Includes assertions in both exec fn and proof fn bodies.
     """
     code = rs_path.read_text()
     functions = parse_function_spans(code)
     all_asserts = find_assert_blocks(code)
 
-    # Keep only assertions inside exec functions
-    exec_fns = [f for f in functions if f["kind"] == "exec"]
+    # Keep assertions inside exec fn and proof fn (not spec fn)
+    non_spec_fns = [f for f in functions if f["kind"] in ("exec", "proof")]
 
     result = []
     for a in all_asserts:
         a_line = a["line"] - 1  # 0-indexed
-        in_exec = any(
-            f["start_line"] <= a_line <= f["end_line"]
-            for f in exec_fns
-        )
-        if in_exec:
+        in_fn = None
+        for f in non_spec_fns:
+            if f["start_line"] <= a_line <= f["end_line"]:
+                in_fn = f
+                break
+        if in_fn:
+            a["is_simple"] = _is_simple_assertion(a)
+            a["in_function"] = in_fn["name"]
+            a["function_kind"] = in_fn["kind"]
             a["index"] = len(result)
             result.append(a)
 
     return result
+
+
+def _is_simple_assertion(a: dict) -> bool:
+    """Check if an assertion is simple enough to be an SMT quirk.
+
+    Simple assertions are single facts the solver should derive on its own.
+    Complex assertions contain inner proof steps (lemma calls, nested asserts,
+    choose expressions, if/else branching) — these are proof scaffolding,
+    not SMT quirks.
+
+    Simple:
+      - assert(expr);
+      - assert(expr) by(nonlinear_arith) requires ...;
+      - assert forall|...| ... by {}   (empty body)
+      - assert forall|...| ... ;       (no by block)
+
+    Complex (skip from quirk counting):
+      - assert ... by { lemma_call(...); }
+      - assert ... by { assert(...); ... }
+      - assert ... by { if ... { ... } }
+      - assert ... by { let x = choose|...|; ... }
+    """
+    kind = a.get("kind", "")
+    text = a.get("text", "")
+
+    # Lemma calls are never quirks
+    if kind == "lemma_call":
+        return False
+
+    # Simple assert(expr); — always simple
+    if kind == "assert":
+        return True
+
+    # NLA tactic — simple (solver hint, not proof scaffolding)
+    if kind == "assert_nla":
+        return True
+
+    # assert forall without by block — simple
+    if kind == "assert_forall" and "by {" not in text and "by{" not in text:
+        return True
+
+    # assert ... by { } — check if body is empty or trivial
+    if "by {" in text or "by{" in text:
+        # Extract the by-body (everything after first "by {")
+        by_idx = text.find("by {")
+        if by_idx == -1:
+            by_idx = text.find("by{")
+        if by_idx == -1:
+            return True  # no by block found
+
+        body = text[by_idx + 3:]  # after "by {"
+
+        # Strip braces, whitespace, comments
+        body_clean = body.strip()
+        if body_clean.startswith("{"):
+            body_clean = body_clean[1:]
+
+        # Remove trailing closing braces and semicolons
+        body_lines = [l.strip() for l in body_clean.split("\n")
+                      if l.strip() and l.strip() not in ("}", "};", "")]
+        # Filter out comments
+        body_lines = [l for l in body_lines if not l.startswith("//")]
+
+        # Empty body → simple
+        if not body_lines:
+            return True
+
+        # Check for complex constructs
+        has_inner_assert = any(l.startswith("assert(") or l.startswith("assert ")
+                               for l in body_lines)
+        has_lemma_call = any(
+            re.match(r'^[a-z_]\w*(?:::<[^>]+>)?\s*\(', l) or
+            re.match(r'^[a-z_]\w*(?:::\w+)+\s*\(', l)
+            for l in body_lines
+        )
+        has_choose = "choose" in body
+        has_if = any(re.match(r'^if\b', l) for l in body_lines)
+        has_let = any(l.startswith("let ") for l in body_lines)
+
+        if has_inner_assert or has_lemma_call or has_choose or has_if or has_let:
+            return False
+
+    return True
 
 
 # ── Phase 2: Ablation ────────────────────────────────────────────────
@@ -401,13 +488,7 @@ def classify_assertion(text: str, kind: str = "assert") -> dict:
             return {"category": "B", "subcategory": "B2-trigger-existential",
                     "confidence": "medium"}
 
-    # Simple equality/bound assertions — propagation / other
-    if re.search(r'assert\(.*==', text_stripped) or \
-       re.search(r'assert\(.*[<>]=?', text_stripped):
-        return {"category": "other", "subcategory": "propagation",
-                "confidence": "low"}
-
-    return {"category": "needs_review", "subcategory": "unknown",
+    return {"category": "other", "subcategory": "unclassified",
             "confidence": "low"}
 
 
@@ -438,10 +519,27 @@ def classify_problem(problem_name: str) -> dict:
         }
 
     # Ablation: remove each assertion, check if verification breaks
+    # Only ablate simple assertions — complex proof blocks are skipped
     essential = []
     non_essential = []
+    skipped_complex = []
+    skipped_lemma = []
 
     for a in asserts:
+        # Skip lemma calls entirely
+        if a.get("kind") == "lemma_call":
+            a["essential"] = False
+            a["skipped"] = "lemma_call"
+            skipped_lemma.append(a)
+            continue
+
+        # Skip complex assertions (contain inner proof steps)
+        if not a.get("is_simple", True):
+            a["essential"] = False
+            a["skipped"] = "complex_proof_block"
+            skipped_complex.append(a)
+            continue
+
         variant = remove_assertion(code, a)
         passes = verify_code(variant)
 
@@ -449,12 +547,6 @@ def classify_problem(problem_name: str) -> dict:
             a["essential"] = True
             classification = classify_assertion(a["text"], a.get("kind", "assert"))
             a["classification"] = classification
-            # Skip lemma calls — they're proof-level reasoning, not quirks
-            if classification["category"] == "lemma_call":
-                a["essential"] = False  # still essential but not a quirk
-                a["is_lemma_call"] = True
-                non_essential.append(a)
-                continue
             essential.append(a)
         else:
             a["essential"] = False
@@ -475,6 +567,8 @@ def classify_problem(problem_name: str) -> dict:
         "total_assertions": len(asserts),
         "essential_count": len(essential),
         "non_essential_count": len(non_essential),
+        "skipped_complex": len(skipped_complex),
+        "skipped_lemma": len(skipped_lemma),
         "essential": essential,
         "categories": categories,
     }
