@@ -96,15 +96,92 @@ def parse_function_spans(code: str) -> list[dict]:
     return functions
 
 
-def find_assert_blocks(code: str) -> list[dict]:
-    """Find all assert statements/blocks in Verus code.
+def _parse_single_assert(lines: list[str], i: int) -> dict | None:
+    """Parse a single assert statement starting at line i.
 
-    Handles:
-    - assert(expr);
-    - assert(expr) by { ... }
-    - assert(expr) by(tactic) requires ...;
-    - assert forall|...| ... implies ... by { ... };
-    - proof { assert(...); ... } blocks (extracts the whole proof block)
+    Returns {line, end_line, text, kind} or None if not an assert.
+    Lines are 0-indexed internally; output uses 1-indexed lines.
+    """
+    stripped = lines[i].strip()
+    if not stripped.startswith("assert") or stripped.startswith("assert!"):
+        return None
+
+    start = i
+    # Check for by { ... } or by(tactic) { ... } block
+    if "by {" in stripped or "by{" in stripped or "by(" in stripped:
+        depth = stripped.count("{") - stripped.count("}")
+        if depth > 0:
+            j = i + 1
+            while j < len(lines) and depth > 0:
+                depth += lines[j].count("{") - lines[j].count("}")
+                j += 1
+            end = j - 1
+        elif stripped.endswith(";"):
+            # by(tactic) with no braces, e.g. by(nonlinear_arith) requires ...;
+            end = i
+        else:
+            # Multi-line by(tactic) requires ...;
+            j = i + 1
+            while j < len(lines) and not lines[j].strip().endswith(";"):
+                j += 1
+            end = j
+    elif stripped.endswith(";"):
+        end = i
+    else:
+        # Multi-line assert (e.g., assert forall spanning lines)
+        j = i + 1
+        while j < len(lines):
+            s = lines[j].strip()
+            if s.endswith(";") or s.endswith("};"):
+                break
+            if "by {" in s or "by{" in s:
+                depth = s.count("{") - s.count("}")
+                j += 1
+                while j < len(lines) and depth > 0:
+                    depth += lines[j].count("{") - lines[j].count("}")
+                    j += 1
+                break
+            j += 1
+        end = j
+
+    text = " ".join(lines[k].strip() for k in range(start, end + 1))
+    kind = "assert"
+    if "by(nonlinear_arith)" in text or "by (nonlinear_arith)" in text:
+        kind = "assert_nla"
+    elif "by {" in text or "by{" in text:
+        kind = "assert_by"
+    elif "assert forall" in text:
+        kind = "assert_forall"
+
+    return {
+        "line": start + 1,
+        "end_line": end + 1,
+        "text": text,
+        "kind": kind,
+    }
+
+
+def _is_lemma_call(line: str) -> bool:
+    """Check if a line is a standalone lemma/proof-fn call (not an assert)."""
+    s = line.strip()
+    # Match: identifier(args);  or  module::identifier(args);
+    # But NOT: assert(...), let ..., if ..., while ..., return ...
+    if s.startswith(("assert", "let ", "if ", "while ", "return", "//",
+                     "}", "{", "ghost ", "proof ", "reveal")):
+        return False
+    # Match function call pattern: name(...)  or  name::<...>(...)
+    if re.match(r'^[a-z_]\w*(?:::<[^>]+>)?\s*\(', s) or \
+       re.match(r'^[a-z_]\w*(?:::\w+)+\s*\(', s):
+        return True
+    return False
+
+
+def find_assert_blocks(code: str) -> list[dict]:
+    """Find all individual assert statements in Verus code.
+
+    Enters proof { } blocks and extracts individual assertions from within.
+    Lemma calls inside proof blocks are tagged as kind="lemma_call".
+    Standalone assert statements outside proof blocks are extracted directly.
 
     Returns list of {line, end_line, text, kind} (1-indexed lines).
     """
@@ -114,73 +191,69 @@ def find_assert_blocks(code: str) -> list[dict]:
     while i < len(lines):
         stripped = lines[i].strip()
 
-        # Match "proof {" blocks (standalone proof blocks in exec functions)
+        # Enter "proof {" blocks and extract individual items inside
         if stripped == "proof {" or stripped == "proof{":
-            start = i
+            proof_start = i
             depth = stripped.count("{") - stripped.count("}")
             j = i + 1
             while j < len(lines) and depth > 0:
+                inner = lines[j].strip()
+
+                # Skip empty, comments, braces-only, let bindings
+                if not inner or inner.startswith("//") or inner in ("{", "}"):
+                    depth += lines[j].count("{") - lines[j].count("}")
+                    j += 1
+                    continue
+
+                # Try to parse an assert statement
+                if inner.startswith("assert") and not inner.startswith("assert!"):
+                    a = _parse_single_assert(lines, j)
+                    if a:
+                        blocks.append(a)
+                        j = a["end_line"]  # end_line is 1-indexed
+                        # Recalculate depth up to this point
+                        depth = 0
+                        for k in range(proof_start, j):
+                            depth += lines[k].count("{") - lines[k].count("}")
+                        continue
+
+                # Check for lemma call
+                if _is_lemma_call(inner):
+                    # Find end of call (may span lines)
+                    call_start = j
+                    if inner.endswith(";"):
+                        call_end = j
+                    else:
+                        k = j + 1
+                        while k < len(lines) and not lines[k].strip().endswith(";"):
+                            k += 1
+                        call_end = k
+                    call_text = " ".join(lines[m].strip() for m in range(call_start, call_end + 1))
+                    blocks.append({
+                        "line": call_start + 1,
+                        "end_line": call_end + 1,
+                        "text": call_text,
+                        "kind": "lemma_call",
+                    })
+                    j = call_end + 1
+                    # Recalculate depth
+                    depth = 0
+                    for k in range(proof_start, j):
+                        depth += lines[k].count("{") - lines[k].count("}")
+                    continue
+
                 depth += lines[j].count("{") - lines[j].count("}")
                 j += 1
-            end = j - 1  # inclusive
-            text = "\n".join(lines[start:end + 1])
-            blocks.append({
-                "line": start + 1,
-                "end_line": end + 1,
-                "text": text,
-                "kind": "proof_block",
-            })
             i = j
             continue
 
-        # Match assert statements
+        # Standalone assert statements (outside proof blocks)
         if stripped.startswith("assert") and not stripped.startswith("assert!"):
-            start = i
-            # Check for by { ... } block
-            if "by {" in stripped or "by{" in stripped:
-                depth = stripped.count("{") - stripped.count("}")
-                j = i + 1
-                while j < len(lines) and depth > 0:
-                    depth += lines[j].count("{") - lines[j].count("}")
-                    j += 1
-                end = j - 1
-            elif stripped.endswith(";"):
-                end = i
-            else:
-                # Multi-line assert (e.g., assert forall spanning lines)
-                j = i + 1
-                while j < len(lines):
-                    s = lines[j].strip()
-                    if s.endswith(";") or s.endswith("};"):
-                        break
-                    if "by {" in s or "by{" in s:
-                        # Start of by block
-                        depth = s.count("{") - s.count("}")
-                        j += 1
-                        while j < len(lines) and depth > 0:
-                            depth += lines[j].count("{") - lines[j].count("}")
-                            j += 1
-                        break
-                    j += 1
-                end = j
-
-            text = " ".join(lines[k].strip() for k in range(start, end + 1))
-            kind = "assert"
-            if "by(nonlinear_arith)" in text or "by (nonlinear_arith)" in text:
-                kind = "assert_nla"
-            elif "by {" in text or "by{" in text:
-                kind = "assert_by"
-            elif "assert forall" in text:
-                kind = "assert_forall"
-
-            blocks.append({
-                "line": start + 1,
-                "end_line": end + 1,
-                "text": text,
-                "kind": kind,
-            })
-            i = end + 1
-            continue
+            a = _parse_single_assert(lines, i)
+            if a:
+                blocks.append(a)
+                i = a["end_line"]  # 1-indexed, so this is correct as next line
+                continue
 
         i += 1
 
@@ -279,17 +352,27 @@ B_PATTERNS = {
     ],
     "B2-trigger-existential": [
         r'assert.*exists',
-    ],
-    "B3-predicate-instantiation": [
-        r'assert\(\s*[a-z_]\w+\(',        # assert(pred_name(args))
-        r'reveal_with_fuel',               # function unfolding
+        # Function equality providing witness: assert(F(args) == F(args))
+        r'assert\(\s*[A-Z]\w+\(.*\)\s*==\s*[A-Z]\w+\(',
+        # Predicate evaluation providing witness: assert(ValidPred(args))
+        r'assert\(\s*[A-Z]\w+\([^)]*\)\s*\)',
+        # Predicate at specific args (lowercase spec fn): assert(pred_name(args))
+        r'assert\(\s*[a-z_]\w+\([^)]*\)\s*\)',
     ],
 }
 
 
-def classify_assertion(text: str) -> dict:
-    """Classify a single Verus assertion into categories."""
+def classify_assertion(text: str, kind: str = "assert") -> dict:
+    """Classify a single Verus assertion into categories.
+
+    Lemma calls (kind="lemma_call") are excluded from quirk classification.
+    """
     text_stripped = text.strip()
+
+    # Lemma calls are not quirks
+    if kind == "lemma_call":
+        return {"category": "lemma_call", "subcategory": "excluded",
+                "confidence": "high"}
 
     # NLA first (specific marker)
     if "nonlinear_arith" in text_stripped:
@@ -307,21 +390,22 @@ def classify_assertion(text: str) -> dict:
         return {"category": "A", "subcategory": "A4-other-seq-ext",
                 "confidence": "medium"}
 
-    # Check B patterns
-    for cat, patterns in B_PATTERNS.items():
-        for pat in patterns:
-            if re.search(pat, text_stripped):
-                return {"category": "B", "subcategory": cat, "confidence": "medium"}
+    # Check B patterns (check B1 before B2 — B2 is broader)
+    for pat in B_PATTERNS["B1-trigger-forall"]:
+        if re.search(pat, text_stripped):
+            return {"category": "B", "subcategory": "B1-trigger-forall",
+                    "confidence": "medium"}
 
-    # Proof block containing lemma calls
-    if text_stripped.startswith("proof {"):
-        # Check what's inside
-        if "=~=" in text_stripped:
-            return {"category": "A", "subcategory": "A4-other-seq-ext",
-                    "confidence": "medium", "note": "=~= inside proof block"}
-        if re.search(r'[a-z_]\w+\(', text_stripped):
-            return {"category": "B", "subcategory": "B3-predicate-instantiation",
-                    "confidence": "low", "note": "lemma call inside proof block"}
+    for pat in B_PATTERNS["B2-trigger-existential"]:
+        if re.search(pat, text_stripped):
+            return {"category": "B", "subcategory": "B2-trigger-existential",
+                    "confidence": "medium"}
+
+    # Simple equality/bound assertions — propagation / other
+    if re.search(r'assert\(.*==', text_stripped) or \
+       re.search(r'assert\(.*[<>]=?', text_stripped):
+        return {"category": "other", "subcategory": "propagation",
+                "confidence": "low"}
 
     return {"category": "needs_review", "subcategory": "unknown",
             "confidence": "low"}
@@ -363,8 +447,14 @@ def classify_problem(problem_name: str) -> dict:
 
         if not passes:
             a["essential"] = True
-            classification = classify_assertion(a["text"])
+            classification = classify_assertion(a["text"], a.get("kind", "assert"))
             a["classification"] = classification
+            # Skip lemma calls — they're proof-level reasoning, not quirks
+            if classification["category"] == "lemma_call":
+                a["essential"] = False  # still essential but not a quirk
+                a["is_lemma_call"] = True
+                non_essential.append(a)
+                continue
             essential.append(a)
         else:
             a["essential"] = False
