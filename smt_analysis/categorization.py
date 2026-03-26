@@ -13,6 +13,7 @@ import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+import tqdm
 
 PROJ_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJ_ROOT) not in sys.path:
@@ -80,7 +81,10 @@ class AssertionCategorization:
     def is_existential(self) -> bool:
         """True if either witness method flagged this assertion."""
         static_hit = self.witness is not None and self.witness.confidence != "none"
-        ablation_hit = self.witness_ablation is not None and self.witness_ablation.confidence != "none"
+        ablation_hit = (
+            self.witness_ablation is not None
+            and self.witness_ablation.confidence != "none"
+        )
         return static_hit or ablation_hit
 
     @property
@@ -89,7 +93,10 @@ class AssertionCategorization:
         methods = []
         if self.witness is not None and self.witness.confidence != "none":
             methods.append(f"static({self.witness.confidence})")
-        if self.witness_ablation is not None and self.witness_ablation.confidence != "none":
+        if (
+            self.witness_ablation is not None
+            and self.witness_ablation.confidence != "none"
+        ):
             methods.append(f"ablation({self.witness_ablation.confidence})")
         return methods
 
@@ -114,19 +121,14 @@ class CategorizationPipelineResult:
     problems: list[ProblemCategorization]
 
 
-def _is_method_in_source(dfy_path: Path, method_name: str) -> bool:
-    content = dfy_path.read_text()
-    return bool(re.search(rf"\bmethod\s+{re.escape(method_name)}\b", content))
-
-
 def parse_assertions(source_file: Path, ast_path: Path) -> list[dict]:
     ast = json.loads(ast_path.read_text())
     assertions = []
     idx = 0
     for method in ast.get("methods", []):
         method_name = method["name"]
-        if not _is_method_in_source(source_file, method_name):
-            continue
+        # if not _is_method_in_source(source_file, method_name):
+        #     continue
         for assertion in method.get("assertions", []):
             text = assertion["text"]
             line = assertion.get("location", {}).get("line", 0)
@@ -497,7 +499,12 @@ async def run_categorization_pipeline(
         )
         for name in names
     ]
-    problems = await asyncio.gather(*tasks)
+    problems = []
+    for res in (
+        pbar := tqdm.tqdm(asyncio.as_completed(tasks), "Processed 0", total=len(names))
+    ):
+        problems.append(await res)
+        pbar.set_description(f"Processed {len(problems)}")
     return CategorizationPipelineResult(
         problem_names=names,
         verification_time_limit=base_args.verification_time_limit,
