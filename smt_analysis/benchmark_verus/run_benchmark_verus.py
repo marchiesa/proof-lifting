@@ -157,11 +157,39 @@ def call_llama(url: str, prompt: str, max_tokens: int = MAX_TOKENS,
     elapsed = time.perf_counter() - t0
     choices = result.get("choices", [])
     msg = choices[0].get("message", {}) if choices else {}
+    text = msg.get("content", "") or ""
+    reasoning = msg.get("reasoning_content", "") or ""
     usage = result.get("usage", {})
 
+    # Handle models with channel tokens in raw content (e.g., gpt-oss via llama.cpp)
+    if "<|channel|>" in text:
+        analysis_match = re.search(
+            r'<\|channel\|>analysis<\|message\|>(.*?)(?:<\|channel\|>|<\|end\|>|$)',
+            text, re.DOTALL)
+        if analysis_match:
+            reasoning = analysis_match.group(1).strip()
+        final_match = re.search(
+            r'<\|channel\|>final<\|message\|>(.*?)(?:<\|end\|>|$)',
+            text, re.DOTALL)
+        if final_match:
+            text = final_match.group(1).strip()
+
+    # Handle inline thinking tags (Qwen3 <think>, Kimi ◁think▷)
+    if not reasoning and text:
+        for tag_pattern in [r'<think>(.*?)</think>', r'◁think▷(.*?)(?:◁/think▷|$)']:
+            m = re.search(tag_pattern, text, re.DOTALL)
+            if m:
+                reasoning = m.group(1).strip()
+                text = re.sub(tag_pattern, '', text, flags=re.DOTALL).strip()
+                break
+
+    # If everything ended up in reasoning, use it as text
+    if not text and reasoning:
+        text = reasoning
+
     return {
-        "text": msg.get("content", ""),
-        "reasoning": msg.get("reasoning_content", ""),
+        "text": text,
+        "reasoning": reasoning,
         "tokens": usage.get("completion_tokens", 0),
         "prompt_tokens": usage.get("prompt_tokens", 0),
         "time": round(elapsed, 2), "raw": result,
