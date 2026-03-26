@@ -1,14 +1,51 @@
-# Dafny → Verus Translation Pipeline
+# Dafny → Verus Translation + Quirk Classification Pipeline
 
-Automated translation of verified Dafny programs to Verus (Rust verification tool).
+Automated translation of verified Dafny programs to Verus (Rust verification tool),
+followed by brittleness detection and SMT quirk classification.
 
 ## Results
 
+### Translation
+
 | Metric | Count |
 |--------|-------|
-| Dafny programs translated | 42 / 95 |
-| Genuinely verified in Verus | 42 / 42 |
-| Unsound (contain assume(false)) | 0 / 42 |
+| Dafny programs translated | 95 / 95 |
+| Verified in Verus | 94 / 95 (1 broken by Verus version change) |
+| Unsound (contain assume(false)) | 0 |
+
+### Brittleness (10 Z3 random seeds)
+
+| Metric | Count |
+|--------|-------|
+| Stable (pass all 10 seeds) | 93 |
+| Brittle (pass some seeds) | 1 (`0017_1005_A`, fixed in `verified_not_brittle.rs`) |
+| Always fails | 1 (`0103_1305_A`, renamed to `unverified.rs`) |
+
+### Quirk Classification (93 stable programs)
+
+| Category | Assertions | Programs | % |
+|----------|-----------|----------|---|
+| A. Missing axioms (seq extensionality) | 44 | 20 | 25.4% |
+| B. E-matching gaps | 55 | 30 | 31.8% |
+| C. Nonlinear arithmetic | 40 | 16 | 23.1% |
+| D. Propagation | 33 | 7 | 19.1% |
+| **Total** | **173** | **57** | |
+
+Programs with no quirk assertions: 36 / 93.
+Lemma calls (proof-level reasoning) are excluded from the quirk count.
+
+Detailed sub-categories:
+
+| Sub-category | Count | % |
+|---|---|---|
+| A2. Take-full (`s.take(n) =~= s`) | 21 | 12.1% |
+| A4. Other seq extensionality | 12 | 6.9% |
+| A3. Push/append | 9 | 5.2% |
+| A1. Subrange-of-subrange | 2 | 1.2% |
+| B1. Trigger forall | 30 | 17.3% |
+| B2. Trigger existential | 25 | 14.5% |
+| C1. Nonlinear arithmetic | 40 | 23.1% |
+| D1. Propagation | 33 | 19.1% |
 
 ## Verification Command
 
@@ -118,24 +155,81 @@ Key patterns discovered during translation (not needed in Dafny):
 | Trivial NLA facts | `by(nonlinear_arith)` even for `0*x==0` | Automatic |
 | Overflow checking | Explicit i64 bounds preconditions | Unbounded int by default |
 
+## Quirk Classification Pipeline
+
+The classification pipeline mirrors the Dafny `classify_quirks.py` but adapted for Verus syntax.
+
+### Step 1: Brittleness detection
+
+```bash
+# Check all programs with 10 Z3 random seeds
+python3 verus_check_brittleness.py --seeds 10
+
+# Check specific problem
+python3 verus_check_brittleness.py --problem 0010_1043_A --seeds 10
+```
+
+Output: `verus_brittleness_results.json`
+
+Brittle programs should be fixed (add intermediate assertions until all seeds pass)
+and saved as `verified_not_brittle.rs`.
+
+### Step 2: Quirk classification (ablation + categorization)
+
+```bash
+# Run on all stable programs (excludes brittle/broken from brittleness results)
+python3 verus_classify_quirks.py --all
+
+# Run on specific problem(s)
+python3 verus_classify_quirks.py --problem 0010_1043_A
+
+# Just extract and show assertions (no ablation)
+python3 verus_classify_quirks.py --extract-only --problem 0010_1043_A
+```
+
+Output: `verus_quirk_classification.json`
+
+The pipeline:
+1. **Extract** individual `assert(...)` statements from executable function bodies (`fn`).
+   Enters `proof { }` blocks and extracts each assertion separately.
+   Skips assertions in `proof fn` / `spec fn` (equivalent to Dafny lemma bodies).
+2. **Ablate** — remove each assertion one at a time, run `verus`, check if verification fails.
+   If it fails → essential. If it still passes → non-essential.
+3. **Classify** — pattern-match essential assertions into categories:
+   - **A** (missing axioms): `=~=` assertions (sequence extensionality)
+   - **B** (e-matching): `assert forall`, existential witnesses, predicate evaluations
+   - **C** (NLA): `by(nonlinear_arith)` assertions
+   - **D** (propagation): simple equalities and bounds
+
+Lemma calls (`sum_append(a, i)`, `product_bound(...)`, etc.) are detected and
+**excluded** — they represent proof-level reasoning, not SMT gaps.
+
 ## File Structure
 
 ```
 programs/
   <problem_id>/
-    source.dfy          # Original Dafny task.dfy
-    translated.rs       # Step 1 output (compiles, may have assume(false))
-    full_translation.rs # Subagent output (full proofs)
-    verified.rs         # Final verified version
-    attempt_*.rs        # Translation attempts
-    proof_attempt_*.rs  # Proof addition attempts
-translate.py            # Step 1: skeleton translation via claude -p
-translate_subagent.py   # Subagent-based translation (recommended)
-add_proofs.py           # Old proof addition via claude -p
-verify_all.py           # Batch verification
-status.json             # Translation tracking
-proof_status.json       # Proof addition tracking
-verification_results.json  # Verification results
+    source.dfy              # Original Dafny task.dfy
+    translated.rs           # Step 1 output (compiles, may have assume(false))
+    full_translation.rs     # Subagent output (full proofs)
+    verified.rs             # Final verified version
+    verified_not_brittle.rs # Fixed version for brittle programs
+    unverified.rs           # Broken programs (fail with current Verus)
+    attempt_*.rs            # Translation attempts
+    proof_attempt_*.rs      # Proof addition attempts
+
+# Translation scripts
+translate.py              # Step 1: skeleton translation via claude -p
+translate_subagent.py     # Subagent-based translation (recommended)
+add_proofs.py             # Old proof addition via claude -p
+verify_all.py             # Batch verification
+status.json               # Translation tracking
+
+# Classification scripts and results
+verus_check_brittleness.py      # Seed-variation brittleness detection
+verus_brittleness_results.json  # Brittleness results (per-problem, per-seed)
+verus_classify_quirks.py        # Ablation + quirk classification pipeline
+verus_quirk_classification.json # Classification results (per-problem, per-assertion)
 ```
 
 ## Reproducing
