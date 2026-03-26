@@ -1,0 +1,181 @@
+ghost predicate ValidGrid(n: int, m: int, grid: seq<string>)
+{
+  n > 0 && m > 0 && |grid| == n &&
+  (forall i | 0 <= i < n :: |grid[i]| == m) &&
+  (forall i | 0 <= i < n :: forall j | 0 <= j < m ::
+    grid[i][j] == 'W' || grid[i][j] == 'B')
+}
+
+// A cell (i,j) lies inside the axis-aligned square with given center and half-side-length
+ghost predicate CellInSquare(i: int, j: int, centerRow: int, centerCol: int, half: int)
+{
+  centerRow - half <= i <= centerRow + half &&
+  centerCol - half <= j <= centerCol + half
+}
+
+// The grid consists of exactly one black square of side length 2*half+1 (odd)
+// centered at (centerRow, centerCol) in 0-indexed coordinates, with all other cells white
+ghost predicate IsBlackSquareCenteredAt(n: int, m: int, grid: seq<string>,
+                                   centerRow: int, centerCol: int, half: int)
+  requires |grid| == n && n > 0 && m > 0
+  requires forall i | 0 <= i < n :: |grid[i]| == m
+{
+  half >= 0 &&
+  centerRow - half >= 0 && centerRow + half < n &&
+  centerCol - half >= 0 && centerCol + half < m &&
+  (forall i | 0 <= i < n ::
+    forall j | 0 <= j < m ::
+      if CellInSquare(i, j, centerRow, centerCol, half)
+      then grid[i][j] == 'B'
+      else grid[i][j] == 'W')
+}
+
+// There exists some black square painted on the grid
+ghost predicate HasBlackSquare(n: int, m: int, grid: seq<string>)
+  requires |grid| == n && n > 0 && m > 0
+  requires forall i | 0 <= i < n :: |grid[i]| == m
+{
+  exists cr | 0 <= cr < n ::
+    exists cc | 0 <= cc < m ::
+      exists h: nat ::
+        IsBlackSquareCenteredAt(n, m, grid, cr, cc, h)
+}
+
+lemma RowOutsideHasNoBlack(n: int, m: int, grid: seq<string>, cr: int, cc: int, half: int, i: int)
+  requires |grid| == n && n > 0 && m > 0
+  requires forall ii | 0 <= ii < n :: |grid[ii]| == m
+  requires IsBlackSquareCenteredAt(n, m, grid, cr, cc, half)
+  requires 0 <= i < n
+  requires i < cr - half || i > cr + half
+  ensures 'B' !in grid[i]
+{
+  forall j | 0 <= j < |grid[i]|
+    ensures grid[i][j] != 'B'
+  {
+    assert !CellInSquare(i, j, cr, cc, half);
+  }
+}
+
+lemma RowInsideHasBlack(n: int, m: int, grid: seq<string>, cr: int, cc: int, half: int, i: int)
+  requires |grid| == n && n > 0 && m > 0
+  requires forall ii | 0 <= ii < n :: |grid[ii]| == m
+  requires IsBlackSquareCenteredAt(n, m, grid, cr, cc, half)
+  requires 0 <= i < n
+  requires cr - half <= i <= cr + half
+  ensures 'B' in grid[i]
+{
+  assert CellInSquare(i, cc, cr, cc, half);
+  assert 0 <= cc < |grid[i]|;
+  assert grid[i][cc] == 'B';
+}
+
+lemma ProveExistsH(n: int, m: int, grid: seq<string>, cr: int, cc: int, half: nat)
+  requires |grid| == n && n > 0 && m > 0
+  requires forall i | 0 <= i < n :: |grid[i]| == m
+  requires IsBlackSquareCenteredAt(n, m, grid, cr, cc, half)
+  ensures exists h: nat :: IsBlackSquareCenteredAt(n, m, grid, cr, cc, h)
+{
+}
+
+method FindSquare(n: int, m: int, grid: seq<string>) returns (r: int, c: int)
+  requires ValidGrid(n, m, grid)
+  requires HasBlackSquare(n, m, grid)
+  ensures 1 <= r <= n && 1 <= c <= m
+  ensures exists h: nat ::
+            IsBlackSquareCenteredAt(n, m, grid, r - 1, c - 1, h)
+{
+  // Extract ghost witnesses from HasBlackSquare
+  ghost var gcr: int :| 0 <= gcr < n &&
+    (exists cc | 0 <= cc < m :: exists h: nat ::
+      IsBlackSquareCenteredAt(n, m, grid, gcr, cc, h));
+  ghost var gcc: int :| 0 <= gcc < m &&
+    (exists h: nat :: IsBlackSquareCenteredAt(n, m, grid, gcr, gcc, h));
+  ghost var ghalf: nat :| IsBlackSquareCenteredAt(n, m, grid, gcr, gcc, ghalf);
+
+  // Loop 1: find first row with 'B'
+  var ly := 0;
+  while ly < |grid| && 'B' !in grid[ly]
+    invariant 0 <= ly <= gcr - ghalf
+    decreases gcr - ghalf - ly
+  {
+    RowInsideHasBlack(n, m, grid, gcr, gcc, ghalf, gcr - ghalf);
+    ly := ly + 1;
+  }
+  if ly < gcr - ghalf {
+    RowOutsideHasNoBlack(n, m, grid, gcr, gcc, ghalf, ly);
+    // PLACEHOLDER_0: insert assertion here
+  }
+  // PLACEHOLDER_1: insert assertion here
+
+  // Loop 2: find first row after ly without 'B'
+  var ry := ly + 1;
+  while ry < |grid| && 'B' in grid[ry]
+    invariant gcr - ghalf < ry <= gcr + ghalf + 1
+    decreases gcr + ghalf + 1 - ry
+  {
+    if ry > gcr + ghalf {
+      RowOutsideHasNoBlack(n, m, grid, gcr, gcc, ghalf, ry);
+      // PLACEHOLDER_2: insert assertion here
+    }
+    ry := ry + 1;
+  }
+  if ry <= gcr + ghalf {
+    RowInsideHasBlack(n, m, grid, gcr, gcc, ghalf, ry);
+    // PLACEHOLDER_3: insert assertion here
+  }
+  // PLACEHOLDER_4: insert assertion here
+
+  // Loop 3: find first 'B' column in row ly
+  var lx := 0;
+  while lx < |grid[ly]| && grid[ly][lx] != 'B'
+    invariant 0 <= lx <= gcc - ghalf
+    decreases gcc - ghalf - lx
+  {
+    // PLACEHOLDER_8: insert assertion here
+    assert grid[ly][gcc - ghalf] == 'B';
+    lx := lx + 1;
+  }
+  if lx < gcc - ghalf {
+    assert !CellInSquare(ly, lx, gcr, gcc, ghalf);
+    // PLACEHOLDER_9: insert assertion here
+    // PLACEHOLDER_10: insert assertion here
+  }
+  assert lx == gcc - ghalf;
+
+  // Loop 4: find first non-'B' column after lx
+  var rx := lx + 1;
+  while rx < |grid[ly]| && grid[ly][rx] == 'B'
+    invariant gcc - ghalf < rx <= gcc + ghalf + 1
+    decreases gcc + ghalf + 1 - rx
+  {
+    if rx > gcc + ghalf {
+      // PLACEHOLDER_11: insert assertion here
+      // PLACEHOLDER_12: insert assertion here
+      // PLACEHOLDER_13: insert assertion here
+    }
+    rx := rx + 1;
+  }
+  if rx <= gcc + ghalf {
+    // PLACEHOLDER_17: insert assertion here
+    // PLACEHOLDER_18: insert assertion here
+    // PLACEHOLDER_19: insert assertion here
+  }
+  // PLACEHOLDER_20: insert assertion here
+
+  // Compute center
+  var y := (ly + ry) / 2;
+  var x := (lx + rx) / 2;
+  r := y + 1;
+  c := x + 1;
+
+  // PLACEHOLDER_21: insert assertion here
+  assert y == gcr;
+  assert lx + rx == 2 * gcc + 1;
+  assert x == gcc;
+  // PLACEHOLDER_22: insert assertion here
+  // PLACEHOLDER_23: insert assertion here
+  // PLACEHOLDER_25: insert assertion here
+  // PLACEHOLDER_27: insert assertion here
+  // PLACEHOLDER_28: insert assertion here
+  ProveExistsH(n, m, grid, r - 1, c - 1, ghalf);
+}

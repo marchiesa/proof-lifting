@@ -9,7 +9,7 @@ benchmark — only 6 tiny programs (8-20 lines each).
 
 Usage:
     python3 benchmark_simplified.py --url http://127.0.0.1:8000 --backend sglang
-    python3 benchmark_simplified.py --url http://127.0.0.1:8000 --backend sglang --types B1-take-full
+    python3 benchmark_simplified.py --url http://127.0.0.1:8000 --backend sglang --types A2-take-full
 """
 
 import argparse
@@ -42,6 +42,7 @@ _CHAT_TEMPLATE = os.environ.get("BENCHMARK_CHAT_TEMPLATE", (
 ))
 _EXTRA_STOP = os.environ.get("BENCHMARK_STOP_TOKENS", "").split("|")
 _EXTRA_STOP = [s for s in _EXTRA_STOP if s]
+_REASONING_PARSER = os.environ.get("BENCHMARK_REASONING_PARSER", "")
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +65,7 @@ def call_llm(url: str, prompt: str, backend: str,
         }).encode("utf-8")
         api_url = f"{url}/generate"
     else:
-        payload = json.dumps({
+        req_body = {
             "model": "default",
             "messages": [
                 {"role": "system", "content": SYSTEM_MSG},
@@ -73,7 +74,10 @@ def call_llm(url: str, prompt: str, backend: str,
             "max_tokens": max_tokens,
             "temperature": temperature,
             "stop": ["</DAFNY_CODE>"] + _EXTRA_STOP,
-        }).encode("utf-8")
+        }
+        if _REASONING_PARSER:
+            req_body["chat_template_kwargs"] = {"enable_thinking": True}
+        payload = json.dumps(req_body).encode("utf-8")
         api_url = f"{url}/v1/chat/completions"
 
     req = urllib.request.Request(api_url, data=payload,
@@ -111,8 +115,24 @@ def call_llm(url: str, prompt: str, backend: str,
     else:
         choices = result.get("choices", [])
         msg = choices[0].get("message", {}) if choices else {}
-        text = msg.get("content", "")
-        reasoning = msg.get("reasoning_content", "")
+        text = msg.get("content", "") or ""
+        reasoning = msg.get("reasoning_content", "") or ""
+        # Extract inline thinking tags (Qwen3 <think>, Kimi ◁think▷)
+        if not reasoning and text:
+            import re as _re2
+            for tag_pattern in [
+                r'<think>(.*?)</think>',
+                r'◁think▷(.*?)(?:◁/think▷|$)',
+            ]:
+                m = _re2.search(tag_pattern, text, _re2.DOTALL)
+                if m:
+                    reasoning = m.group(1).strip()
+                    text = _re2.sub(tag_pattern, '', text, flags=_re2.DOTALL).strip()
+                    break
+        # If reasoning-parser put everything in reasoning_content and
+        # content is empty, extract code from reasoning text
+        if not text and reasoning:
+            text = reasoning
         usage = result.get("usage", {})
         tokens = usage.get("completion_tokens", 0)
         prompt_tokens = usage.get("prompt_tokens", 0)
@@ -190,13 +210,15 @@ def verify(code: str, tmp_dir: Path) -> tuple[bool, str, float]:
 
 def build_prompt(stripped_code: str, type_name: str, description: str,
                  dafny_error: str | None = None, attempt: int = 1) -> str:
+    # Qwen3 soft switch: /think enables reasoning mode
+    think_tag = " /think" if _REASONING_PARSER else ""
     if attempt == 1 or not dafny_error:
         return f"""This short Dafny program fails verification because one `assert` statement was removed.
 The missing assertion is of type: {description}
 
 Add the missing `assert` statement to make `dafny verify` pass.
 Do NOT modify any existing code — only add one assert.
-Return the complete program inside <DAFNY_CODE> tags.
+Return the complete program inside <DAFNY_CODE> tags.{think_tag}
 
 ```dafny
 {stripped_code}
@@ -213,7 +235,7 @@ The program (unchanged):
 {stripped_code}
 ```
 
-Add the correct `assert` to make it verify. Return inside <DAFNY_CODE> tags.
+Add the correct `assert` to make it verify. Return inside <DAFNY_CODE> tags.{think_tag}
 
 <DAFNY_CODE>
 """
@@ -354,12 +376,15 @@ def main():
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--run-id", default=None, help="Run number (for repeated runs)")
+    parser.add_argument("--model-suffix", default="", help="Suffix to add to model name in results dir")
     args = parser.parse_args()
 
     global TIMEOUT_PER_TYPE
     TIMEOUT_PER_TYPE = args.timeout
 
     model = os.environ.get("BENCHMARK_MODEL", "unknown")
+    if args.model_suffix:
+        model = f"{model}-{args.model_suffix}"
     if not args.output_dir:
         suffix = f"_run{args.run_id}" if args.run_id else ""
         args.output_dir = str(SCRIPT_DIR / "results" / f"{model}{suffix}")

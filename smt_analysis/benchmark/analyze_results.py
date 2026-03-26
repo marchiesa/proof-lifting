@@ -24,11 +24,11 @@ RESULTS_BASE = Path(__file__).parent / "results"
 
 # Quirk type patterns
 QUIRK_PATTERNS = {
-    "B1": [r"\[\.\.[\|]\w+[\|]\]\s*==\s*\w+", r"\[\.\..*\+\s*1\]\s*==\s*\w+\[\.\."],
-    "A2": [r"^assert\s+[A-Z]\w+\("],
-    "A1": [r"^assert\s+exists"],
-    "C1": [r"[%/]"],
-    "D4": [r"^assert\s+false\s*;"],
+    "A": [r"\[\.\.[\|]\w+[\|]\]\s*==\s*\w+", r"\[\.\..*\+\s*1\]\s*==\s*\w+\[\.\."],
+    "B1": [r"^assert\s+[A-Z]\w+\("],
+    "B2": [r"^assert\s+exists"],
+    "C1": [r"\w+\s*==\s*\w+\s*[-+]\s*\w+"],
+    "D1": [r"[%/]", r"^assert\s+false\s*;"],
 }
 
 

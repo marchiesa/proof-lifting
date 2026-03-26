@@ -1,0 +1,349 @@
+Problem: 0006_1017_A
+Essential assertions: 1
+Result: SUCCESS
+Attempts: 3
+Total time: 860.95s
+Total tokens: 24576
+
+============================================================
+ATTEMPT 1
+============================================================
+
+--- PROMPT (3570 chars) ---
+The following Dafny program has a correct implementation and specification, but verification fails because some `assert` statements are missing. The program verified successfully before these assertions were removed.
+
+RULES — read carefully:
+1. Add `assert` statements to make `dafny verify` pass.
+2. You may add helper lemmas or ghost functions if needed.
+3. You MUST NOT modify ANY existing code. Do not change variable names, assignments, control flow, loop bodies, if/else branches, return statements, or any expression.
+4. You MUST NOT modify ANY formal specification. Do not change requires, ensures, invariant, decreases, function bodies, or predicate bodies.
+5. Any modification to existing code or specifications will be automatically detected and rejected. We compare the AST of your output against the original — only added assert statements and new lemma/function definitions are permitted.
+
+Return the complete Dafny program with your added assertions inside <DAFNY_CODE> tags.
+
+```dafny
+// The total score for a student (sum of their 4 subject scores).
+ghost function TotalScore(student: seq<int>): int
+  requires |student| >= 4
+{
+  student[0] + student[1] + student[2] + student[3]
+}
+
+// Count how many students in the given sequence have a total score
+// strictly greater than the threshold.
+ghost function CountBetter(students: seq<seq<int>>, threshold: int): int
+  requires forall i | 0 <= i < |students| :: |students[i]| >= 4
+  decreases |students|
+{
+  if |students| == 0 then 0
+  else
+    CountBetter(students[..|students|-1], threshold)
+    + (if TotalScore(students[|students|-1]) > threshold then 1 else 0)
+}
+
+// A student "ranks above" Thomas if their total score is strictly higher,
+// or their total score is equal and their id is smaller. Since Thomas has
+// id 1 (index 0), no other student (index >= 1) has a smaller id.
+// Therefore, a student ranks above Thomas iff their score is strictly higher.
+//
+// The rank of Thomas is 1 + the number of students who rank above h...
+
+--- LLM RESPONSE (8192 tokens, 290.06s) ---
+◁think▷Okay, I need to figure out how to add assert statements to the Dafny program to make it verify. The user mentioned that the verification failed because some asserts were missing, but the code used to verify before they were removed. Let me look at the code provided.
+
+Looking at the method TheRank, there's a while loop with an invariant that says rank equals 1 plus CountBetter(scores[1..i], myScore). The loop increments i each time. The problem might be that the code isn't properly maintaining the invariant. 
+
+In the loop body, after calculating otherScore, there's a comment about inlining from CountBetterAppend. The existing asserts check that combining the sequences correctly. Then, if otherScore is greater than myScore, rank is incremented. 
+
+Wait, the CountBetter function is supposed to count how many students in a given sequence have a score better than the threshold. The invariant says that after processing i elements, the rank is 1 plus CountBetter(scores[1..i], myScore). But when we add the next student (scores[i]), we need to check if their score is better. So the increment to rank should be based on whether TotalScore(scores[i]) > myScore. 
+
+But in the code, the if statement checks otherScore > myScore. However, otherScore is the sum of the current student's scores, which is the same as TotalScore(scores[i]). So maybe the code is correct, but the Dafny verifier isn't able to see that. 
+
+The key is that the invariant needs to be maintained after each iteration. The code adds the current student (scores[i]) to the sequence being considered. The existing code has an assert that CountBetter(scores[1..i] + [scores[i]], myScore) equals CountBetter(scores[1..i], myScore) plus 1 if the new score is better. But maybe the Dafny verifier isn't able to infer this relationship. 
+
+So, adding an assert that directly relates the current otherScore to the CountBetter increment might help. For example, after calculating otherScore, we can assert that (otherScore > myScore) == (TotalScore(scores[i]) > myScore). But since otherScore is exactly TotalScore(scores[i]), this should always be true. However, the verifier might not see that, especially if there's a step missing in the calculation.
+
+Wait, looking at the code: 
+
+var otherScore := scores[i][0] + scores[i][1] + scores[i][2] + scores[i][3];
+
+But TotalScore(scores[i]) is defined as student[0] + ... + student[3], where student is scores[i]. So otherScore is equal to TotalScore(scores[i]). So maybe adding an assert that otherScore == TotalScore(scores[i]) would help the verifier understand that the code is correctly calculating the total score. 
+
+Then, when the code checks if otherScore > myScore, that's equivalent to checking TotalScore(scores[i]) > myScore. So adding that assertion would make the verifier recognize that the condition in the if statement is the same as the one in the CountBetter calculation. 
+
+So the problem might be that the verifier isn't able to see that otherScore is equal to TotalScore(scores[i]). Therefore, adding an assert after calculating otherScore would help. 
+
+Let me look at the existing code in the loop body:
+
+var otherScore := scores[i][0] + scores[i][1] + scores[i][2] + scores[i][3];
+
+// Key assertion: scores[1..i+1] == scores[1..i] + [scores[i]]
+
+// Inlined from CountBetterAppend(scores[1..i], myScore, scores[i])
+var combined := (scores[1..i]) + [(scores[i])];
+assert combined[..|combined|-1] == (scores[1..i]);
+assert CountBetter(scores[1..i] + [scores[i]], myScore) == CountBetter(scores[1..i], myScore) + (if TotalScore(scores[i]) > myScore then 1 else 0);
+
+if otherScore > myScore {
+  rank := rank + 1;
+}
+
+So, after computing otherScore, perhaps adding an assert that otherScore == TotalScore(scores[i]) would help. Because the code uses otherScore to determine whether to increment rank, but the CountBetter function uses TotalScore. The verifier might not see that otherScore is the same as TotalScore(scores[i]), leading to a failure in the assertion that the CountBetter calculation is correct. 
+
+So, inserting an assert after the calculation of otherScore:
+
+var otherScore := scores[i][0] + scores[i][1] + scores[i][2] + scores[i][3];
+assert otherScore == TotalScore(scores[i]);
+
+Then, the if statement checks otherScore > myScore, which would be equivalent to TotalScore(scores[i]) > myScore. This would allow the verifier to connect the code's logic with the CountBetter function's calculation. 
+
+Additionally, the existing assert in the loop body checks that the combined sequence is correctly formed. But maybe there are other steps that need to be asserted. 
+
+Another possible missing assertion is after the if statement. For example, after updating rank, we need to ensure that the invariant is maintained. The loop invariant states that rank == 1 + CountBetter(scores[1..i], myScore). After incrementing i, the next iteration should have the invariant hold. But perhaps after modifying rank, there's a need to assert that the new rank is cor
+
+--- DAFNY OUTPUT ---
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(1,14): Error: invalid MethodDecl
+  |
+1 | method TheRank, there's a while loop with an invariant that says rank equals 1 plus CountBetter(scores[1..i], myScore). The loop increments i each time. The problem might be that the code isn't properly maintaining the invariant. 
+  |               ^
+
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(5,31): Error: invalid NoUSIdentOrDigits
+  |
+5 | Wait, the CountBetter function is supposed to count how many students in a given sequence have a score better than the threshold. The invariant says that after processing i elements, the rank is 1 plus CountBetter(scores[1..i], myScore). But when we add the next student (scores[i]), we need to check if their score is better. So the increment to rank should be based on whether TotalScore(scores[i]) > myScore. 
+  |                                ^
+
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(15,0): Error: fields are not allowed to be declared at the module level; instead, wrap the field in a 'class' declaration
+   |
+15 | var otherScore := scores[i][0] + scores[i][1] + scores[i][2] + scores[i][3];
+   | ^^^
+
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(15,4): Error: a mutable field must be declared with a type
+   |
+15 | var otherScore := scores[i][0] + scores[i][1] + scores[i][2] + scores[i][3];
+   |     ^^^^^^^^^^
+
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(15,15): Error: a mutable field may not have an initializer
+   |
+15 | var otherScore := scores[i][0] + scores[i][1] + scores[i][2] + scores[i][
+
+--- RESULT: FAIL ---
+
+============================================================
+ATTEMPT 2
+============================================================
+
+--- PROMPT (4173 chars) ---
+Your previous attempt failed verification. Here is the error:
+
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(1,14): Error: invalid MethodDecl
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(5,31): Error: invalid NoUSIdentOrDigits
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(15,0): Error: fields are not allowed to be declared at the module level; instead, wrap the field in a 'class' declaration
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(15,4): Error: a mutable field must be declared with a type
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(15,15): Error: a mutable field may not have an initializer
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(17,0): Error: this symbol not expected in Dafny
+6 parse errors detected in attempt.dfy
+
+REMINDER: Do NOT modify any existing code or specifications. Only add `assert` statements (and optionally helper lemmas). Any code modification will be automatically detected and rejected.
+
+The original program (without assertions) is:
+
+```dafny
+// The total score for a student (sum of their 4 subject scores).
+ghost function TotalScore(student: seq<int>): int
+  requires |student| >= 4
+{
+  student[0] + student[1] + student[2] + student[3]
+}
+
+// Count how many students in the given sequence have a total score
+// strictly greater than the threshold.
+ghost function CountBetter(students: seq<seq<int>>, threshold: int): int
+  requires forall i | 0 <= i < |students| :: |students[i]| >= 4
+  decreases |students|
+{
+  if ...
+
+--- LLM RESPONSE (8192 tokens, 284.91s) ---
+◁think▷Okay, let's tackle this problem. The user provided a Dafny code snippet that's failing verification. The errors mentioned are about invalid method declarations, identifiers, and field declarations. But the user's task is to add assert statements without modifying existing code. Wait, but the original code seems correct. Wait, maybe the errors are from a different part, but the user's challenge is to fix the verification by adding assertions.
+
+Wait, the user says that their previous attempt failed verification, and they need to add assert statements to make it pass. The original code is provided, and they need to add assertions to ensure correctness.
+
+Looking at the code, the method TheRank is supposed to compute the rank of a student (Thomas) based on scores. The loop invariant says that after processing i students, the rank is 1 plus the count of students better than Thomas in the first i elements. The code increments the rank when a student's score is higher than Thomas's.
+
+The key part is ensuring that the loop correctly maintains the invariant. The existing code has an assertion about combining sequences, but maybe there's a missing assertion that links the loop's current state to the ExpectedRank.
+
+Wait, the loop invariant is rank == 1 + CountBetter(scores[1..i], myScore). The ExpectedRank is 1 + CountBetter(scores[1..n], myScore). So when i reaches n, the loop ends, and rank should be equal to ExpectedRank. But how does the loop invariant ensure that?
+
+Wait, the loop runs while i < n, and increments i each time. When the loop exits, i == n. The invariant says that during the loop, rank is 1 + CountBetter(scores[1..i], myScore). So after the loop, when i == n, the invariant would imply that rank is 1 + CountBetter(scores[1..n], myScore), which is exactly ExpectedRank. Therefore, the ensures clause is satisfied.
+
+But maybe Dafny isn't able to infer that. So perhaps adding an assertion after the loop that connects the invariant to the ensures clause would help. Like, after the loop, assert that rank == ExpectedRank(n, scores). Wait, but the ensures clause already says that. So maybe the problem is that the loop invariant isn't strong enough, or the code isn't maintaining it properly.
+
+Looking at the code inside the loop: when a student's score is better, rank is incremented. The CountBetter function counts how many students in the given sequence have a score better than the threshold. So each iteration adds the current student's contribution. The loop invariant should hold after each iteration.
+
+But perhaps the code is missing an assertion that the combined sequence is indeed the same as appending the current student. Wait, the existing code has:
+
+var combined := (scores[1..i]) + [(scores[i])];
+assert combined[..|combined|-1] == (scores[1..i]);
+assert CountBetter(scores[1..i] + [scores[i]], myScore) == CountBetter(scores[1..i], myScore) + (if TotalScore(scores[i]) > myScore then 1 else 0);
+
+Wait, but scores[1..i] is the slice from index 1 to i (exclusive?), so for i=1, it's scores[1..1], which is an empty sequence. Wait, in Dafny, the slice s[i..j] includes elements from i to j-1. So when i=1, scores[1..i] is scores[1..1], which is empty. Then combined is empty + [scores[1]]? Wait, no. Wait, the loop starts at i=1. Wait, the loop starts with i=1, and increments until i < n. So for each i, the code is considering the students from 1 to i (since scores[1..i] is from index 1 to i-1). Wait, maybe that's part of the problem.
+
+Wait, in the ExpectedRank function, it's counting students at indices 1..n-1 (since Thomas is at index 0). So the CountBetter is called on scores[1..n], which is the students from index 1 to n-1. But in the loop, when i is from 1 to n-1, the code is processing each student one by one and updating the count.
+
+Wait, in the loop invariant, it's written as CountBetter(scores[1..i], myScore). But scores[1..i] for i=1 would be scores[1..1], which is an empty sequence. Then CountBetter(empty, myScore) is 0. So the initial rank is 1, which is correct. Then when i increments, the code adds the current student's score. So each iteration adds to the count if the current student's score is better.
+
+But the code in the loop has:
+
+var otherScore := ...;
+if otherScore > myScore {
+  rank := rank + 1;
+}
+
+Which is equivalent to adding 1 if the current student's score is better. So the loop invariant should hold. But perhaps Dafny isn't able to verify that the loop invariant is maintained. So adding an assertion inside the loop that after processing the current student, the invariant holds would help.
+
+Wait, the existing code has the loop invariant:
+
+invariant rank == 1 + CountBetter(scores[1..i], myScore)
+
+But inside the loop, after processing the current student (i), the code increments rank if needed. Then i is incremented. So after processing the current student, the code should have:
+
+rank == 1 + CountBetter(scores[1..i+1], myScore)
+
+But the loop invariant is checked after each iteration. Wait,
+
+--- DAFNY OUTPUT ---
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(1,19): Error: invalid MethodDecl
+  |
+1 | method declarations, identifiers, and field declarations. But the user's task is to add assert statements without modifying existing code. Wait, but the original code seems correct. Wait, maybe the errors are from a different part, but the user's challenge is to fix the verification by adding assertions.
+  |                    ^
+
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(5,40): Error: invalid MethodDecl
+  |
+5 | Looking at the code, the method TheRank is supposed to compute the rank of a student (Thomas) based on scores. The loop invariant says that after processing i students, the rank is 1 plus the count of students better than Thomas in the first i elements. The code increments the rank when a student's score is higher than Thomas's.
+  |                                         ^
+
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(13,4): Error: this symbol not expected in Dafny
+   |
+13 | But maybe Dafny isn't able to infer that. So perhaps adding an assertion after the loop that connects the invariant to the ensures clause would help. Like, after the loop, assert that rank == ExpectedRank(n, scores). Wait, but the ensures clause already says that. So maybe the problem is that the loop invariant isn't strong enough, or the code isn't maintaining it properly.
+   |     ^
+
+3 parse errors detected in attempt.dfy
+
+--- RESULT: FAIL ---
+
+============================================================
+ATTEMPT 3
+============================================================
+
+--- PROMPT (3828 chars) ---
+Your previous attempt failed verification. Here is the error:
+
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(1,19): Error: invalid MethodDecl
+1 | method declarations, identifiers, and field declarations. But the user's task is to add assert statements without modifying existing code. Wait, but the original code seems correct. Wait, maybe the errors are from a different part, but the user's challenge is to fix the verification by adding assertions.
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(5,40): Error: invalid MethodDecl
+/leonardo_work/EUHPC_D29_022/mchiesa0/benchmark/results_full_kimi-dev-72b_5000s_run5_batch2_20260321_160050/0006_1017_A/tmp/attempt.dfy(13,4): Error: this symbol not expected in Dafny
+3 parse errors detected in attempt.dfy
+
+REMINDER: Do NOT modify any existing code or specifications. Only add `assert` statements (and optionally helper lemmas). Any code modification will be automatically detected and rejected.
+
+The original program (without assertions) is:
+
+```dafny
+// The total score for a student (sum of their 4 subject scores).
+ghost function TotalScore(student: seq<int>): int
+  requires |student| >= 4
+{
+  student[0] + student[1] + student[2] + student[3]
+}
+
+// Count how many students in the given sequence have a total score
+// strictly greater than the threshold.
+ghost function CountBetter(students: seq<seq<int>>, threshold: int): int
+  requires forall i | 0 <= i < |students| :: |students[i]| >= 4
+  decreases |students|
+{
+  if |students| == 0 then 0
+  else
+    CountBetter(students[..|students|-1], threshold)
+    + (if TotalScore(students[|students|-1]) > threshold then 1 else 0)
+}
+
+// A student "ranks above" Thomas if their total score is strictly higher,
+// or their total score is equal and their id is smaller. Since Thomas has
+// id 1 (index 0), no other student (...
+
+--- LLM RESPONSE (8192 tokens, 283.72s) ---
+◁think▷Okay, let's tackle this problem. The user provided a Dafny code snippet that's failing verification, and the errors are related to invalid MethodDecl and unexpected symbols. The task is to add assert statements without modifying existing code to fix the verification.
+
+First, I need to look at the original code and the error messages. The errors are in lines 1, 5, and 13 of the generated attempt.dfy file. But the user's original code seems correct. Wait, maybe the errors are from a different part, but the user's challenge is to fix the verification by adding assertions. The reminder says not to modify existing code, only add asserts and helper lemmas.
+
+Looking at the code, the method TheRank has a loop with some assertions. The key part is the inlined CountBetterAppend part. The existing code has:
+
+var combined := (scores[1..i]) + [(scores[i])];
+assert combined[..|combined|-1] == (scores[1..i]);
+assert CountBetter(scores[1..i] + [scores[i]], myScore) == CountBetter(scores[1..i], myScore) + (if TotalScore(scores[i]) > myScore then 1 else 0);
+
+Wait, maybe the issue is that the code is trying to concatenate sequences but there's a syntax error. Or perhaps the CountBetter function's arguments are incorrect. Let me check the CountBetter function's definition.
+
+The CountBetter function is defined as:
+
+ghost function CountBetter(students: seq<seq<int>>, threshold: int): int
+
+So when calling CountBetter, the first argument is a sequence of students (each being a sequence of ints), and the second is the threshold. In the existing code, the line:
+
+CountBetter(scores[1..i] + [scores[i]], myScore)
+
+But scores[1..i] is a seq<seq<int>>, and [scores[i]] is a seq<seq<int>> (since scores[i] is a seq<int>). Adding them should create a longer seq<seq<int>>, which is correct. But maybe there's an issue with how the sequences are being constructed.
+
+Alternatively, the problem might be that the code is using [(scores[i])] which is a sequence containing the sequence scores[i]. Wait, in Dafny, to create a sequence with one element, you use [e], so if scores[i] is a seq<int>, then [scores[i]] would be a seq<seq<int>>, which when concatenated with scores[1..i] (which is seq<seq<int>>) would form a valid seq<seq<int>>. So the arguments to CountBetter should be correct.
+
+But the error messages mention parse errors. Maybe the code has some syntax issues. Let me check the original code again. The user's code has:
+
+    var combined := (scores[1..i]) + [(scores[i])];
+    assert combined[..|combined|-1] == (scores[1..i]);
+    assert CountBetter(scores[1..i] + [scores[i]], myScore) == CountBetter(scores[1..i], myScore) + (if TotalScore(scores[i]) > myScore then 1 else 0);
+
+Wait, the line with combined: is (scores[1..i]) + [(scores[i])]. But in Dafny, when you add two sequences, you need to use the + operator. That's correct. But maybe the way [(scores[i])] is written is causing a problem. Wait, scores[i] is a seq<int>, so [scores[i]] is a seq<seq<int>>, which can be added to scores[1..i] (seq<seq<int>>) to form a longer seq<seq<int>>. So that part should be okay.
+
+But the error messages indicate that there are parse errors. Let me look at the original code again. The code starts with:
+
+// The total score for a student (sum of their 4 subject scores).
+ghost function TotalScore(student: seq<int>): int
+  requires |student| >= 4
+{
+  student[0] + student[1] + student[2] + student[3]
+}
+
+// Count how many students in the given sequence have a total score
+// strictly greater than the threshold.
+ghost function CountBetter(students: seq<seq<int>>, threshold: int): int
+  requires forall i | 0 <= i < |students| :: |students[i]| >= 4
+  decreases |students|
+{
+  if |students| == 0 then 0
+  else
+    CountBetter(students[..|students|-1], threshold)
+    + (if TotalScore(students[|students|-1]) > threshold then 1 else 0)
+}
+
+Wait, in the CountBetter function, the recursive call is CountBetter(students[..|students|-1], threshold). The students[..|students|-1] is the sequence up to but not including the last element. Then, the base case is when |students| is 0. That seems correct.
+
+But maybe the problem is in the loop in TheRank method. The loop invariant is:
+
+invariant rank == 1 + CountBetter(scores[1..i], myScore)
+
+And in the loop body, after calculating otherScore, they have:
+
+var combined := (scores[1..i]) + [(scores[i])];
+assert combined[..|combined|-1] == (scores[1..i]);
+assert CountBetter(scores[1..i] + [scores[i]], myScore) == CountBetter(scores[1..i], myScore) + (if TotalScore(scores[i]) > myScore then 1 else 0);
+
+Wait, the first assert is checking that the combined sequence up to the second last element is equal to the original scores[1..i]. But combined is (scores[1..i]) + [scores[i]], so combined has length |scores[1..i]| + 1. Taking combined[..|combined|-1] is the same as combined[..|scores[1..i]|], which should be equal to scores[1..i]. So that assert is correct.
+
+The second assert is trying to show that adding the new student (scores[i]) to 
+
+--- DAFNY OUTPUT ---
+Dafny program verifier finished with 5 verified, 0 errors
+
+--- RESULT: PASS ---
+

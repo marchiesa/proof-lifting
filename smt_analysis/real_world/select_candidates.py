@@ -44,25 +44,25 @@ def classify_quirk(code, name, doc):
     doc_lower = (doc or "").lower()
     combined = code_lower + " " + doc_lower
 
-    # B1: accumulation over sequence (sum, prefix, running total, build list)
+    # A5: accumulation over sequence (sum, prefix, running total, build list)
     if re.search(r'(sum|total|accum|running|prefix|cumul)', combined):
-        return "B1-accumulation"
+        return "A5-combined"
     if re.search(r'\w+\s*\+=\s*\w+', code) and re.search(r'for\s+\w+\s+in\s+', code):
-        return "B1-accumulation"
+        return "A5-combined"
     if re.search(r'\.append\(', code) and re.search(r'for\s+\w+\s+in', code):
-        return "B1-build-list"
+        return "A4-append-empty"
 
-    # A1: search/find/lookup
+    # B2: search/find/lookup
     if re.search(r'(find|search|index|contain|lookup|locate)', combined):
-        return "A1-search"
+        return "B2-trigger-existential"
     if re.search(r'if\s+\w+\s*==\s*\w+.*:\s*\n\s*return', code):
-        return "A1-search"
+        return "B2-trigger-existential"
 
-    # A2: predicate/validation check
+    # B1: predicate/validation check
     if re.search(r'(is_valid|is_sorted|all\(|any\(|check|valid|verify|satisf)', combined):
-        return "A2-predicate"
+        return "B1-trigger-forall"
     if re.search(r'(sorted|ascending|descending|monoton|order)', combined):
-        return "A2-predicate"
+        return "B1-trigger-forall"
 
     # C1: nonlinear arithmetic
     if re.search(r'[a-z_]\w*\s*\*\s*[a-z_]\w*', code) and \
@@ -73,9 +73,9 @@ def classify_quirk(code, name, doc):
     if code.count("if ") + code.count("elif ") >= 3:
         return "D-case-split"
 
-    # B1 catch-all: any loop building a result
+    # A5 catch-all: any loop building a result
     if re.search(r'result\s*=|output\s*=|ret\s*=', code) and re.search(r'for|while', code):
-        return "B1-accumulation"
+        return "A5-combined"
 
     return "unknown"
 
@@ -132,10 +132,10 @@ def main():
     candidates = []
     by_quirk = defaultdict(list)
     target_per_quirk = {
-        "B1-accumulation": 25,
-        "B1-build-list": 15,
-        "A1-search": 20,
-        "A2-predicate": 15,
+        "A5-combined": 25,
+        "A4-append-empty": 15,
+        "B2-trigger-existential": 20,
+        "B1-trigger-forall": 15,
         "C1-nla": 10,
         "D-case-split": 15,
     }

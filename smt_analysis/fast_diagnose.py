@@ -382,46 +382,46 @@ def parse_boogie_model(raw: str) -> dict:
 # Phase 4: Diagnose — heuristic for equality assertions
 # ---------------------------------------------------------------------------
 
-# Taxonomy categories (paper: A=E-matching, B=Missing axioms, C=Theory, D=Propagation)
+# Taxonomy categories (paper: A=Missing axioms, B=E-matching, C=Brittle, D=Other)
 #
-# B1: Sequence extensionality — missing object-level equality axioms
+# A: Sequence extensionality — missing object-level equality axioms
 SEQ_EXT_PATTERNS = [
     {
-        "name": "B1-take-append",
-        "high_level": "B-missing-axioms",
-        "low_level": "B1-seq-extensionality",
+        "name": "A3-take-append",
+        "high_level": "A-missing-axioms",
+        "low_level": "A3-take-append",
         "sub_pattern": "take-append",
         "desc": "Seq#Take(s, i+1) == Seq#Append(Seq#Take(s, i), Seq#Build(Seq#Index(s, i)))",
         "regex": r'(\w+)\[\.\.(\w+)\s*\+\s*1\]\s*==\s*\1\[\.\.\2\]\s*\+\s*\[\1\[\2\]\]',
     },
     {
-        "name": "B1-take-full-length",
-        "high_level": "B-missing-axioms",
-        "low_level": "B1-seq-extensionality",
+        "name": "A2-take-full",
+        "high_level": "A-missing-axioms",
+        "low_level": "A2-take-full",
         "sub_pattern": "take-full",
         "desc": "Seq#Take(s, |s|) == s",
         "regex": r'(\w+)\[\.\.\|(\1)\|\]\s*==\s*\1',
     },
     {
-        "name": "B1-take-of-append-prefix",
-        "high_level": "B-missing-axioms",
-        "low_level": "B1-seq-extensionality",
+        "name": "A3-take-append",
+        "high_level": "A-missing-axioms",
+        "low_level": "A3-take-append",
         "sub_pattern": "take-of-take",
         "desc": "(a + b)[..|a|] == a  or  combined[..|combined|-1] == a",
         "regex": r'(\w+)\[\.\.\|.*\|\s*-?\s*1?\]\s*==',
     },
     {
-        "name": "B1-cons-decomposition",
-        "high_level": "B-missing-axioms",
-        "low_level": "B1-seq-extensionality",
+        "name": "A4-append-empty",
+        "high_level": "A-missing-axioms",
+        "low_level": "A4-append-empty",
         "sub_pattern": "cons-decomposition",
         "desc": "s == [s[0]] + s[1..]",
         "regex": r'(\w+)\s*==\s*\[\1\[0\]\]\s*\+\s*\1\[1\.\.\]',
     },
     {
-        "name": "B1-slice-index-equiv",
-        "high_level": "B-missing-axioms",
-        "low_level": "B1-seq-extensionality",
+        "name": "A1-take-take",
+        "high_level": "A-missing-axioms",
+        "low_level": "A1-take-take",
         "sub_pattern": "slice-index-equiv",
         "desc": "a[1..][i] == a[i+1] or similar slice-index equivalence",
         "regex": r'\w+\[\d+\.\.\]\[.*\]\s*==\s*\w+\[',
@@ -436,11 +436,10 @@ def classify_assertion(assertion: dict, model: dict | None) -> dict:
     """Classify an essential assertion using the 4-category taxonomy.
 
     Categories:
-      A. E-matching gaps (A1-A5): missing witnesses, predicate/function
-         instantiation, quantifier instantiation, length tracking
-      B. Missing axioms (B1): sequence extensionality
-      C. Theory incompleteness (C1): nonlinear arithmetic
-      D. Propagation failures (D1-D4): equality, bounds, indexing, case exhaustiveness
+      A. Missing axioms (A1-A5): sequence extensionality patterns
+      B. E-matching gaps (B1-B2): trigger forall, trigger existential
+      C. Brittle (C1): equality propagation, fragile solver behavior
+      D. Other (D1): nonlinear arithmetic, case exhaustiveness, etc.
 
     Returns diagnosis dict with {category, high_level, low_level, pattern,
     confidence, details}.
@@ -449,19 +448,19 @@ def classify_assertion(assertion: dict, model: dict | None) -> dict:
     """
     expr = assertion["expr"]
 
-    # Non-equality → flag (may be A1 existential witness, A2 predicate, etc.)
+    # Non-equality → flag (may be B2 existential witness, B1 trigger-forall, etc.)
     if not assertion["is_equality"]:
         return {
             "category": "flagged",
             "high_level": "unknown",
             "low_level": "unknown",
-            "reason": "non-equality assertion (may be A1-A5 or D1-D4)",
+            "reason": "non-equality assertion (may be B1-B2 or C1-D1)",
             "confidence": "n/a",
         }
 
     result = {}
 
-    # Try known sequence extensionality patterns (B1)
+    # Try known sequence extensionality patterns (A1)
     for pat in PATTERNS:
         if re.search(pat["regex"], expr):
             result = {
@@ -586,9 +585,9 @@ def diagnose_from_model(assertion: dict, model: dict) -> dict | None:
                     "missing_equality": f"Seq#Take result ({list(take_produces)}) ≠ Seq#Append result ({list(append_produces)}) despite same length ({length})",
                 }
                 return {
-                    "category": "B1-seq-extensionality",
-                    "high_level": "B-missing-axioms",
-                    "low_level": "B1-seq-extensionality",
+                    "category": "A5-combined",
+                    "high_level": "A-missing-axioms",
+                    "low_level": "A5-combined",
                     "confidence": "high",
                     "match": "model",
                     "details": details,

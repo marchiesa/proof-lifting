@@ -3,7 +3,7 @@ from __future__ import annotations
 """
 Build simplified minimal examples for each type of essential assertion.
 
-For each quirk type (B1-take-full, A2-predicate-instantiation, etc.),
+For each quirk type (A2-take-full, B1-trigger-forall, etc.),
 creates the smallest possible Dafny program where the same type of
 assertion is still essential.
 
@@ -16,7 +16,7 @@ Tracks completed types in tracker.json to avoid redundant work.
 
 Usage:
     python3 smt_analysis/simplified/build_simplified.py
-    python3 smt_analysis/simplified/build_simplified.py --types B1-take-full B1-take-append
+    python3 smt_analysis/simplified/build_simplified.py --types A2-take-full A3-take-append
     python3 smt_analysis/simplified/build_simplified.py --max-attempts 5
 """
 
@@ -43,47 +43,47 @@ DAFNY_DLL = os.environ.get("DAFNY_DLL",
 
 # Known quirk types with regex patterns for matching
 QUIRK_TYPES = {
-    "B1-take-full": {
+    "A2-take-full": {
         "pattern": r"assert\s+\w+\[\.\.[\|]\w+[\|]\]\s*==\s*\w+\s*;",
         "description": "Sequence take-full: a[..|a|] == a",
         "example_hint": "A loop that processes a sequence prefix a[..i] and needs a[..|a|] == a after the loop.",
     },
-    "B1-take-append": {
+    "A3-take-append": {
         "pattern": r"assert\s+\w+\[\.\..*\+\s*1\]\s*==\s*\w+\[\.\..*\]\s*\+\s*\[",
         "description": "Sequence take-append: a[..i+1] == a[..i] + [a[i]]",
         "example_hint": "A loop that builds up a result from a sequence prefix, needing a[..i+1] == a[..i] + [a[i]] in the loop body.",
     },
-    "B1-take-of-take": {
+    "A1-take-take": {
         "pattern": r"assert\s+\w+\[\.\..*\]\[\.\..*\]\s*==",
         "description": "Nested take: a[..i+1][..i] == a[..i]",
         "example_hint": "A recursive function over a[..i] where unfolding produces a[..i+1][..i].",
     },
-    "A2-predicate-instantiation": {
+    "B1-trigger-forall": {
         "pattern": r"assert\s+[A-Z]\w+\(",
         "description": "Predicate not evaluated: assert P(a, b, c)",
         "example_hint": "A ghost predicate P(x,y) that Z3 won't evaluate at specific arguments without an explicit assert.",
     },
-    "A1-existential-witness": {
+    "B2-trigger-existential": {
         "pattern": r"assert\s+(exists|.*==.*FriendSum|.*ValidCombo)",
         "description": "Missing witness for existential quantifier",
         "example_hint": "A postcondition with 'exists k :: ...' where Z3 needs a ground term as witness.",
     },
-    "A3-function-unfolding": {
+    "B1-trigger-forall-unfolding": {
         "pattern": r"assert\s+[A-Z]\w+\(.*\)\s*==",
         "description": "Function not unfolded: assert F(x) == y",
         "example_hint": "A recursive ghost function where Z3 won't unfold it at specific args.",
     },
-    "C1-nonlinear-arithmetic": {
+    "D1-other-nla": {
         "pattern": r"assert\s+.*[%/\*].*",
         "description": "NLA: modulo, division, or multiplication hint",
         "example_hint": "An assertion involving n % k or n / k that Z3's NLA solver can't derive.",
     },
-    "D1-equality-propagation": {
+    "C1-brittle": {
         "pattern": r"assert\s+\w+\s*==\s*\w+\s*[-+]\s*\w+\s*;",
         "description": "Equality not propagated from assignments",
         "example_hint": "Ghost variables assigned from other variables, where Z3 won't substitute and simplify.",
     },
-    "D4-case-exhaustiveness": {
+    "D1-other-case": {
         "pattern": r"assert\s+false\s*;",
         "description": "Unreachable branch: assert false",
         "example_hint": "A case split where one branch is unreachable but Z3 can't derive the contradiction.",
@@ -334,10 +334,10 @@ def pass3_type_check(code: str, type_name: str, original_text: str) -> tuple[boo
         return False, f"type mismatch: expected {type_name}, found {found_types}"
 
     # Loose checks for types that patterns may miss
-    if type_name.startswith("B1-") and "[.." in code:
+    if type_name.startswith("A") and type_name[1:2].isdigit() and "[.." in code:
         return True, f"sequence operations present (loose match for {type_name})"
 
-    if type_name == "A2-predicate-instantiation":
+    if type_name == "B1-trigger-forall":
         for line in code.split("\n"):
             if line.strip().startswith("assert ") and re.search(r"[A-Z]\w+\(", line):
                 return True, "predicate call in assert"

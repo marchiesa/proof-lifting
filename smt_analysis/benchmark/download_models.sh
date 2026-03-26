@@ -6,9 +6,10 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
+#SBATCH --mem=8G
 #SBATCH --partition=lrd_all_serial
 #SBATCH --qos=normal
+#SBATCH --gres=tmpfs:10g
 #SBATCH --account=EUHPC_D29_022
 
 # Download models for the benchmark.

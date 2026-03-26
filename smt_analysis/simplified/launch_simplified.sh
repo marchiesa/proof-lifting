@@ -2,7 +2,7 @@
 #SBATCH --job-name=simp-bench
 #SBATCH --output=/leonardo_work/EUHPC_D29_022/mchiesa0/logs/simp-bench_%j.out
 #SBATCH --error=/leonardo_work/EUHPC_D29_022/mchiesa0/logs/simp-bench_%j.err
-#SBATCH --time=01:00:00
+#SBATCH --time=04:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
@@ -74,6 +74,7 @@ print(m.get('tp', 4))
 print('|'.join(m.get('stop_tokens', [])))
 ct = m.get('chat_template', '')
 print(ct)
+print(m.get('reasoning_parser', ''))
 ")
 
 HF_PATH=$(echo "$MODEL_CONFIG" | sed -n '1p')
@@ -82,14 +83,17 @@ CTX_LEN=$(echo "$MODEL_CONFIG" | sed -n '3p')
 DEFAULT_TP=$(echo "$MODEL_CONFIG" | sed -n '4p')
 STOP_TOKENS=$(echo "$MODEL_CONFIG" | sed -n '5p')
 CHAT_TEMPLATE=$(echo "$MODEL_CONFIG" | sed -n '6p')
+REASONING_PARSER=$(echo "$MODEL_CONFIG" | sed -n '7p')
 
 TP=${TP:-$DEFAULT_TP}
 MODEL_PATH="$MODELS_DIR/$HF_PATH"
 
+export PYTHONUNBUFFERED=1
 export BENCHMARK_MODEL="$MODEL"
 export BENCHMARK_CHAT_API="$CHAT_API"
 export BENCHMARK_CHAT_TEMPLATE="$CHAT_TEMPLATE"
 export BENCHMARK_STOP_TOKENS="$STOP_TOKENS"
+export BENCHMARK_REASONING_PARSER="$REASONING_PARSER"
 
 echo "=== Simplified Benchmark ==="
 echo "Model: $MODEL ($MODEL_PATH)"
@@ -100,15 +104,10 @@ echo ""
 
 # --- Start SGLang ---
 echo "Starting SGLang server (TP=$TP)..."
-python -m sglang.launch_server \
-    --model-path "$MODEL_PATH" \
-    --host 127.0.0.1 \
-    --port $PORT \
-    --tp $TP \
-    --mem-fraction-static 0.88 \
-    --context-length $CTX_LEN \
-    --log-level warning \
-    2>&1 &
+SGLANG_ARGS="--model-path $MODEL_PATH --host 127.0.0.1 --port $PORT --tp $TP --mem-fraction-static 0.88 --context-length $CTX_LEN --log-level warning"
+[ -n "$REASONING_PARSER" ] && SGLANG_ARGS="$SGLANG_ARGS --reasoning-parser $REASONING_PARSER"
+echo "SGLang args: $SGLANG_ARGS"
+python -m sglang.launch_server $SGLANG_ARGS 2>&1 &
 SERVER_PID=$!
 
 for i in $(seq 1 360); do
@@ -134,12 +133,16 @@ nvidia-smi --query-gpu=memory.used,memory.free --format=csv
 # --- Run benchmark ---
 echo ""
 echo "Running simplified benchmark..."
-python3 "$SIMPLIFIED_DIR/benchmark_simplified.py" \
-    --url "http://127.0.0.1:$PORT" \
-    --backend sglang \
-    --output-dir "$SIMPLIFIED_DIR/results/${MODEL}${RUN_ID:+_run${RUN_ID}}" \
-    --timeout $TIMEOUT \
-    --temperature $TEMPERATURE
+BENCH_ARGS="--url http://127.0.0.1:$PORT --backend sglang --timeout $TIMEOUT --temperature $TEMPERATURE"
+[ -n "$RUN_ID" ] && BENCH_ARGS="$BENCH_ARGS --run-id $RUN_ID"
+[ -n "$REASONING_PARSER" ] && BENCH_ARGS="$BENCH_ARGS --model-suffix thinking"
+
+# Build output dir name
+RESULT_NAME="${MODEL}${REASONING_PARSER:+-thinking}${RUN_ID:+_run${RUN_ID}}"
+BENCH_ARGS="$BENCH_ARGS --output-dir $SIMPLIFIED_DIR/results/$RESULT_NAME"
+
+echo "Benchmark args: $BENCH_ARGS"
+python3 "$SIMPLIFIED_DIR/benchmark_simplified.py" $BENCH_ARGS
 
 echo ""
 echo "=== Complete ==="
