@@ -26,6 +26,7 @@ TP=""
 TIMEOUT=300
 TEMPERATURE=0.7
 RUN_ID=""
+LANG="dafny"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -34,6 +35,7 @@ while [[ $# -gt 0 ]]; do
         --timeout) TIMEOUT="$2"; shift 2 ;;
         --temperature) TEMPERATURE="$2"; shift 2 ;;
         --run-id) RUN_ID="$2"; shift 2 ;;
+        --lang) LANG="$2"; shift 2 ;;
         *) echo "Unknown arg: $1"; exit 1 ;;
     esac
 done
@@ -56,6 +58,7 @@ source "$WORK/software/sglang_env/bin/activate"
 export DOTNET8="$WORK/software/dotnet8/dotnet"
 export DAFNY_DLL="$WORK/software/dafny-modified/Dafny.dll"
 export Z3_PATH="$WORK/software/z3/bin/z3"
+export VERUS_BIN="$WORK/software/verus/verus-x86-linux/verus"
 
 mkdir -p "$SIMPLIFIED_DIR/results" "$WORK/logs"
 
@@ -133,12 +136,14 @@ nvidia-smi --query-gpu=memory.used,memory.free --format=csv
 # --- Run benchmark ---
 echo ""
 echo "Running simplified benchmark..."
-BENCH_ARGS="--url http://127.0.0.1:$PORT --backend sglang --timeout $TIMEOUT --temperature $TEMPERATURE"
+BENCH_ARGS="--url http://127.0.0.1:$PORT --backend sglang --timeout $TIMEOUT --temperature $TEMPERATURE --lang $LANG"
 [ -n "$RUN_ID" ] && BENCH_ARGS="$BENCH_ARGS --run-id $RUN_ID"
 [ -n "$REASONING_PARSER" ] && BENCH_ARGS="$BENCH_ARGS --model-suffix thinking"
 
 # Build output dir name
-RESULT_NAME="${MODEL}${REASONING_PARSER:+-thinking}${RUN_ID:+_run${RUN_ID}}"
+LANG_PREFIX=""
+[ "$LANG" != "dafny" ] && LANG_PREFIX="${LANG}_"
+RESULT_NAME="${LANG_PREFIX}${MODEL}${REASONING_PARSER:+-thinking}${RUN_ID:+_run${RUN_ID}}"
 BENCH_ARGS="$BENCH_ARGS --output-dir $SIMPLIFIED_DIR/results/$RESULT_NAME"
 
 echo "Benchmark args: $BENCH_ARGS"

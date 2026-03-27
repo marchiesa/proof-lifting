@@ -28,11 +28,14 @@ EXAMPLES_DIR = SCRIPT_DIR / "examples"
 DOTNET = os.environ.get("DOTNET8", os.environ.get("DOTNET", "dotnet"))
 DAFNY_DLL = os.environ.get("DAFNY_DLL", "Dafny.dll")
 Z3_PATH = os.environ.get("Z3_PATH", None)
+VERUS_BIN = os.environ.get("VERUS_BIN", "verus")
 TIMEOUT_PER_TYPE = 300  # seconds
 MAX_TOKENS = 8192  # reasoning models need budget for thinking + code
 VERIFY_TIMEOUT = 30
 
+LANG = "dafny"  # set by --lang flag
 SYSTEM_MSG = "You are a Dafny verification expert. Output only code, no explanations."
+SYSTEM_MSG_VERUS = "You are a Verus (Rust verification) expert. Output only code, no explanations."
 
 _CHAT_API = os.environ.get("BENCHMARK_CHAT_API", "false").lower() == "true"
 _CHAT_TEMPLATE = os.environ.get("BENCHMARK_CHAT_TEMPLATE", (
@@ -149,8 +152,10 @@ def call_llm(url: str, prompt: str, backend: str,
 def extract_code(response: str, stripped_code: str | None = None) -> str | None:
     """Extract code from LLM response. If the response is just an assertion,
     insert it into the stripped code at the placeholder location."""
-    # Strategy 1: DAFNY_CODE tags or markdown
+    # Strategy 1: Code tags or markdown
     for pattern in [r'<DAFNY_CODE>\s*(.*?)(?:</DAFNY_CODE>|$)',
+                    r'<VERUS_CODE>\s*(.*?)(?:</VERUS_CODE>|$)',
+                    r'```rust\s*(.*?)\s*```',
                     r'```dafny\s*(.*?)\s*```', r'```\s*(.*?)\s*```']:
         m = re.search(pattern, response, re.DOTALL | re.IGNORECASE)
         if m:
@@ -158,6 +163,8 @@ def extract_code(response: str, stripped_code: str | None = None) -> str | None:
 
     # Strategy 2: Full program in response
     if "method " in response or "function " in response or "lemma " in response:
+        return response.strip()
+    if "verus!" in response or "use vstd" in response:
         return response.strip()
 
     # Strategy 3: Response contains just an assert statement — insert into stripped code
@@ -188,20 +195,33 @@ def extract_code(response: str, stripped_code: str | None = None) -> str | None:
 
 
 def verify(code: str, tmp_dir: Path) -> tuple[bool, str, float]:
-    dfy = tmp_dir / "attempt.dfy"
-    dfy.write_text(code)
-    cmd = [DOTNET, str(DAFNY_DLL), "verify", str(dfy),
-           "--verification-time-limit", str(VERIFY_TIMEOUT)]
-    if Z3_PATH:
-        cmd.extend(["--solver-path", Z3_PATH])
-    t0 = time.perf_counter()
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=VERIFY_TIMEOUT + 30)
-        output = r.stdout + "\n" + r.stderr
-    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-        output = str(e)
-    elapsed = time.perf_counter() - t0
-    return "0 errors" in output, output.strip(), round(elapsed, 2)
+    if LANG == "verus":
+        rs = tmp_dir / "attempt.rs"
+        rs.write_text(code)
+        cmd = [VERUS_BIN, str(rs)]
+        t0 = time.perf_counter()
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=VERIFY_TIMEOUT + 30)
+            output = r.stdout + "\n" + r.stderr
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            output = str(e)
+        elapsed = time.perf_counter() - t0
+        return "0 errors" in output and r.returncode == 0, output.strip(), round(elapsed, 2)
+    else:
+        dfy = tmp_dir / "attempt.dfy"
+        dfy.write_text(code)
+        cmd = [DOTNET, str(DAFNY_DLL), "verify", str(dfy),
+               "--verification-time-limit", str(VERIFY_TIMEOUT)]
+        if Z3_PATH:
+            cmd.extend(["--solver-path", Z3_PATH])
+        t0 = time.perf_counter()
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=VERIFY_TIMEOUT + 30)
+            output = r.stdout + "\n" + r.stderr
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            output = str(e)
+        elapsed = time.perf_counter() - t0
+        return "0 errors" in output, output.strip(), round(elapsed, 2)
 
 
 # ---------------------------------------------------------------------------
@@ -212,32 +232,42 @@ def build_prompt(stripped_code: str, type_name: str, description: str,
                  dafny_error: str | None = None, attempt: int = 1) -> str:
     # Qwen3 soft switch: /think enables reasoning mode
     think_tag = " /think" if _REASONING_PARSER else ""
+    if LANG == "verus":
+        lang_name = "Verus (Rust verification)"
+        verify_cmd = "verus"
+        code_tag = "VERUS_CODE"
+        code_fence = "rust"
+    else:
+        lang_name = "Dafny"
+        verify_cmd = "dafny verify"
+        code_tag = "DAFNY_CODE"
+        code_fence = "dafny"
     if attempt == 1 or not dafny_error:
-        return f"""This short Dafny program fails verification because one `assert` statement was removed.
+        return f"""This short {lang_name} program fails verification because one `assert` statement was removed.
 The missing assertion is of type: {description}
 
-Add the missing `assert` statement to make `dafny verify` pass.
+Add the missing `assert` statement to make `{verify_cmd}` pass.
 Do NOT modify any existing code — only add one assert.
-Return the complete program inside <DAFNY_CODE> tags.{think_tag}
+Return the complete program inside <{code_tag}> tags.{think_tag}
 
-```dafny
+```{code_fence}
 {stripped_code}
 ```
 
-<DAFNY_CODE>
+<{code_tag}>
 """
     else:
         return f"""Your previous assertion was wrong. Error:
 {dafny_error}
 
 The program (unchanged):
-```dafny
+```{code_fence}
 {stripped_code}
 ```
 
-Add the correct `assert` to make it verify. Return inside <DAFNY_CODE> tags.{think_tag}
+Add the correct `assert` to make it verify. Return inside <{code_tag}> tags.{think_tag}
 
-<DAFNY_CODE>
+<{code_tag}>
 """
 
 
@@ -247,9 +277,10 @@ Add the correct `assert` to make it verify. Return inside <DAFNY_CODE> tags.{thi
 
 def run_type(type_name: str, example_dir: Path, output_dir: Path,
              backend: str, url: str, temperature: float) -> dict:
+    ext = "rs" if LANG == "verus" else "dfy"
     meta = json.loads((example_dir / "meta.json").read_text())
-    stripped = (example_dir / "stripped.dfy").read_text()
-    original = (example_dir / "example.dfy").read_text()
+    stripped = (example_dir / f"stripped.{ext}").read_text()
+    original = (example_dir / f"example.{ext}").read_text()
 
     out = output_dir / type_name
     out.mkdir(parents=True, exist_ok=True)
@@ -377,25 +408,33 @@ def main():
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--run-id", default=None, help="Run number (for repeated runs)")
     parser.add_argument("--model-suffix", default="", help="Suffix to add to model name in results dir")
+    parser.add_argument("--lang", choices=["dafny", "verus"], default="dafny",
+                        help="Target language (dafny or verus)")
     args = parser.parse_args()
 
-    global TIMEOUT_PER_TYPE
+    global TIMEOUT_PER_TYPE, LANG, EXAMPLES_DIR, SYSTEM_MSG
     TIMEOUT_PER_TYPE = args.timeout
+    LANG = args.lang
+    if LANG == "verus":
+        EXAMPLES_DIR = SCRIPT_DIR / "examples_verus"
+        SYSTEM_MSG = SYSTEM_MSG_VERUS
 
     model = os.environ.get("BENCHMARK_MODEL", "unknown")
     if args.model_suffix:
         model = f"{model}-{args.model_suffix}"
+    lang_prefix = f"{LANG}_" if LANG != "dafny" else ""
     if not args.output_dir:
         suffix = f"_run{args.run_id}" if args.run_id else ""
-        args.output_dir = str(SCRIPT_DIR / "results" / f"{model}{suffix}")
+        args.output_dir = str(SCRIPT_DIR / "results" / f"{lang_prefix}{model}{suffix}")
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Find all example types
+    ext = "rs" if LANG == "verus" else "dfy"
     types = []
     for d in sorted(EXAMPLES_DIR.iterdir()):
-        if d.is_dir() and (d / "example.dfy").exists():
+        if d.is_dir() and (d / f"example.{ext}").exists():
             types.append(d.name)
 
     if args.types:
